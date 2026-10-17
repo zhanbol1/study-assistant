@@ -1,0 +1,26 @@
+{
+  "name": "uca-lms-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local, approval-gated Moodle automation for Codex.",
+  "scripts": {
+    "credentials:set": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/credential-manager.ps1 set",
+    "credentials:delete": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/credential-manager.ps1 delete",
+    "discover": "node src/cli.js discover",
+    "courses": "node src/cli.js courses",
+    "bridge:start": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/start-bridge.ps1",
+    "bridge:health": "node src/bridge/client.js health",
+    "bridge:courses": "node src/bridge/client.js courses",
+    "bridge:assignments": "node src/bridge/client.js assignments",
+    "bridge:activities": "node src/bridge/client.js activities",
+    "bridge:download": "node src/bridge/client.js download",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "playwright": "^1.56.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

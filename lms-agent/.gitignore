@@ -1,0 +1,12 @@
+node_modules/
+.npm-cache/
+.playwright-browsers/
+downloads/*
+!downloads/.gitkeep
+artifacts/*
+!artifacts/.gitkeep
+.env
+.bridge-token
+*.log
+playwright-report/
+test-results/

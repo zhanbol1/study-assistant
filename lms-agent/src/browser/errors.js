@@ -1,6 +1,7 @@
 const messages = {
   'network-timeout': 'Moodle did not respond in time. Try again shortly; this does not mean your credentials are wrong.',
   'network-error': 'Moodle could not be reached. Check your network or VPN and try again.',
+  'download-timeout': 'Moodle file transfer timed out after one retry. Course access worked, but this file could not finish downloading. Try again later or download it directly in Moodle.',
   'page-not-ready': 'Moodle opened, but its page content did not finish loading. Try again shortly.',
   'login-rejected': 'Moodle rejected the saved login. Update it with npm run credentials:set in the project terminal.',
   'login-incomplete': 'Moodle sign-in did not complete. SSO or MFA may require an interactive login.',
@@ -9,11 +10,11 @@ const messages = {
   'course-unavailable': 'Moodle did not open the requested course. It may be unavailable or your session may have expired.',
 };
 export class MoodleError extends Error {
-  constructor(code, message = messages[code]) { super(message || 'Moodle could not be read.'); this.name = 'MoodleError'; this.code = code; this.retryable = ['network-timeout', 'network-error', 'page-not-ready', 'courses-not-loaded', 'server-unavailable'].includes(code); }
+  constructor(code, message = messages[code]) { super(message || 'Moodle could not be read.'); this.name = 'MoodleError'; this.code = code; this.retryable = ['network-timeout', 'network-error', 'download-timeout', 'page-not-ready', 'courses-not-loaded', 'server-unavailable'].includes(code); }
 }
 export function safeMoodleError(error) {
   const value = String(error?.message || '');
-  if (error instanceof MoodleError) return { code: error.code, message: error.message, retryable: ['network-timeout', 'network-error', 'page-not-ready', 'courses-not-loaded', 'server-unavailable'].includes(error.code) };
+  if (error instanceof MoodleError) return { code: error.code, message: error.message, retryable: error.retryable };
   if (error?.name === 'PresentationReadError') return { code: 'presentation-unreadable', message: value, retryable: false };
   if (/No LMS credentials/.test(value)) return { code: 'credentials-missing', message: 'No Moodle credentials are stored. Run npm run credentials:set in the project terminal.', retryable: false };
   if (/Executable doesn't exist|Cannot find package|Cannot find module/.test(value)) return { code: 'browser-missing', message: 'Moodle dependencies or Chromium are missing. Run npm run lms:install and npm run lms:browser.', retryable: false };

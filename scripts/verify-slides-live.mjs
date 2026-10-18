@@ -12,17 +12,18 @@ const { listCourses } = await import("../lms-agent/src/browser/courses.js");
 const { listCourseFiles } = await import("../lms-agent/src/browser/files.js");
 const { readCourseSlides } = await import("../lms-agent/src/browser/presentation.js");
 const { withAuthenticatedPage } = await import("../lms-agent/src/browser/session.js");
+const { safeMoodleError } = await import("../lms-agent/src/browser/errors.js");
 const inspect = process.argv.includes("--inspect-first-folder");
 const courseArg = process.argv.indexOf("--course");
 const requestedCourse = courseArg >= 0 ? process.argv[courseArg + 1]?.toLowerCase() : null;
 const store = createStore(":memory:");
 const sources = [];
-const execute = createMoodleTools({ store, sources, read: async (operation, args) => {
-  if (operation === "courses") return listCourses();
-  if (operation === "files") return listCourseFiles(args.courseId, args.activityId);
-  if (operation === "read-slides") return readCourseSlides(args.courseId, args.activityId, args.fileId);
+const execute = createMoodleTools({ store, sources, read: async (operation, args) => { try {
+  if (operation === "courses") return await listCourses();
+  if (operation === "files") return await listCourseFiles(args.courseId, args.activityId);
+  if (operation === "read-slides") return await readCourseSlides(args.courseId, args.activityId, args.fileId);
   throw new Error("Unsupported live-check operation.");
-} });
+} catch (error) { const failure = safeMoodleError(error); throw Object.assign(new Error(failure.message), { code: failure.code, retryable: failure.retryable }); } } });
 async function call(name, args = {}) {
   const result = await execute({ name, arguments: JSON.stringify(args) });
   if (result.error) throw new Error(result.error);

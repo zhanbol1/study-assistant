@@ -6,6 +6,21 @@ import { cleanText } from '../security/sanitize.js';
 import { withAuthenticatedPage } from './session.js';
 import { normalizeActivities } from './activities.js';
 import { openMoodlePage } from './navigation.js';
+import { MoodleError } from './errors.js';
+
+export async function requestMoodleFile(context, url, { timeout = 60000 } = {}) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      // PPTX/ZIP files are already compressed. Avoid unnecessary HTTP compression.
+      return await context.request.get(url, { timeout, maxRedirects: 0, headers: { 'Accept-Encoding': 'identity' } });
+    } catch (error) {
+      const timedOut = /timeout|timed out/i.test(error.message || '');
+      const transient = timedOut || /ECONNRESET|net::ERR_(?:CONNECTION_RESET|CONNECTION_CLOSED)/.test(error.message || '');
+      if (transient && attempt === 0) continue;
+      throw new MoodleError(timedOut ? 'download-timeout' : 'network-error');
+    }
+  }
+}
 
 const numeric = value => { if (!/^\d{1,15}$/.test(String(value))) throw new Error('Invalid Moodle ID.'); };
 const courseUrl = id => `${config.baseUrl.replace(/\/$/, '')}/course/view.php?id=${id}`;
@@ -81,7 +96,7 @@ export async function downloadCourseFile(courseId, activityId, fileId) {
     for (let redirect = 0; redirect <= 5; redirect++) {
       const url = new URL(requestUrl);
       if (url.origin !== new URL(config.baseUrl).origin || url.username || url.password) throw new Error('External file downloads are not supported. Open this resource in Moodle.');
-      response = await context.request.get(url.href, { timeout: 60000, maxRedirects: 0 });
+      response = await requestMoodleFile(context, url.href);
       if (![301, 302, 303, 307, 308].includes(response.status())) break;
       const location = response.headers().location;
       await response.dispose(); response = null;

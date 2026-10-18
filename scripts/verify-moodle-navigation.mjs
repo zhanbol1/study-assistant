@@ -10,14 +10,21 @@ const { ensureAuthenticated } = await import("../lms-agent/src/browser/login.js"
 const { openMoodlePage } = await import("../lms-agent/src/browser/navigation.js");
 const { readCoursesFromPage } = await import("../lms-agent/src/browser/courses.js");
 const { safeMoodleError } = await import("../lms-agent/src/browser/errors.js");
+const { requestMoodleFile } = await import("../lms-agent/src/browser/files.js");
 const browser = await chromium.launch({ headless: true });
 const form = '<main id="region-main"><form action="/login/index.php" method="post"><input name="username"><input name="password" type="password"><button type="submit">Log in</button></form></main>';
-let mode = 'normal', signedIn = false, overviewRequests = 0;
+let mode = 'normal', signedIn = false, overviewRequests = 0, downloadRequests = 0;
 const external = http.createServer((_request,response)=>{response.setHeader('Content-Type','text/html');response.end(form)});
 await new Promise(resolve=>external.listen(0,'127.0.0.1',resolve));
 const server = http.createServer((request,response)=>{
   const url = new URL(request.url,'http://localhost');
   response.setHeader('Content-Type','text/html');
+  if (url.pathname === '/file') {
+    downloadRequests++;
+    assert.equal(request.headers['accept-encoding'], 'identity');
+    if (mode === 'download-stall' || downloadRequests === 1) { response.writeHead(200); response.write('partial'); return; }
+    response.end('complete fixture');return;
+  }
   if (url.pathname === '/slow-image.png') return;
   if (mode === 'server-error') {response.writeHead(503);response.end('private diagnostic');return;}
   if (mode === 'external') {response.writeHead(303,{location:'http://127.0.0.1:'+external.address().port+'/login'});response.end();return;}
@@ -48,6 +55,17 @@ try {
  mode='external';let credentialReads=0;
  await assert.rejects(ensureAuthenticated(page,destination,{getCredential:async()=>{credentialReads++;return{}},loginTimeout:2000}),error=>error.code==='login-external');
  assert.equal(credentialReads,0);
+ const downloadContext=await browser.newContext();
+ try {
+   const fileUrl=new URL('/file',destination).href;
+   const downloaded=await requestMoodleFile(downloadContext,fileUrl,{timeout:200});
+   assert.equal(await downloaded.text(),'complete fixture');
+   await downloaded.dispose();
+   assert.equal(downloadRequests,2,'Retry a stalled file transfer exactly once');
+   mode='download-stall';downloadRequests=0;
+   await assert.rejects(requestMoodleFile(downloadContext,fileUrl,{timeout:200}),error=>error.code==='download-timeout'&&!error.message.includes('Call log'));
+   assert.equal(downloadRequests,2,'Stop after the second failed transfer');
+ } finally { await downloadContext.close(); }
  console.log('Moodle navigation fixtures passed: stalled resources, redirects, rejected login, delayed courses, HTTP errors and external sign-in boundaries.');
 } finally {
  await browser.close();server.closeAllConnections();external.closeAllConnections();

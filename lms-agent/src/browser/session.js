@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { config } from '../config.js';
 import { ensureAuthenticated } from './login.js';
+import { MoodleError } from './errors.js';
 
 export async function withAuthenticatedPage(destinationUrl, operation) {
   await fs.mkdir(config.artifactsDir, { recursive: true });
@@ -23,15 +24,16 @@ export async function withAuthenticatedPage(destinationUrl, operation) {
 }
 
 export async function waitForMoodleContent(page) {
-  await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {});
   const overview = page.locator(
     '[data-region="course-content"], [data-region="course-overview"], .block_myoverview',
   ).first();
-  await overview.waitFor({ state: 'attached', timeout: 15_000 }).catch(() => {});
-  await overview.scrollIntoViewIfNeeded().catch(() => {});
-  await page.locator(
-    '[data-region="course-content"] a[href*="/course/view.php?id="], ' +
-    '[data-region="course-overview"] a[href*="/course/view.php?id="], ' +
-    '.block_myoverview a[href*="/course/view.php?id="]',
-  ).first().waitFor({ state: 'attached', timeout: 30_000 }).catch(() => {});
+  try {
+    await overview.waitFor({ state: 'attached', timeout: 20000 });
+    await page.waitForFunction(() => {
+      const area = document.querySelector('[data-region="course-content"], [data-region="course-overview"], .block_myoverview');
+      if (!area) return false;
+      if (area.querySelector('a[href*="/course/view.php?id="]')) return true;
+      return [...area.querySelectorAll('[data-region="empty-message"], .no-courses, .nocourses, [data-region="no-courses"]')].some(node => !node.hidden && node.getClientRects().length && getComputedStyle(node).display !== 'none');
+    }, undefined, { timeout: 45000 });
+  } catch { throw new MoodleError('courses-not-loaded'); }
 }

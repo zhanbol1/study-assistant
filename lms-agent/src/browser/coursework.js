@@ -4,6 +4,8 @@ import { withAuthenticatedPage } from './session.js';
 import { normalizeActivities } from './activities.js';
 import { deadlineDetails, extractDetailDom } from './deadlines.js';
 import { completionDetails } from './completion.js';
+import { openMoodlePage } from './navigation.js';
+import { MoodleError } from './errors.js';
 
 export async function listCoursework(courseId, timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone) {
   if (!/^\d{1,15}$/.test(String(courseId))) throw new Error('Course ID must be numeric.');
@@ -11,9 +13,9 @@ export async function listCoursework(courseId, timeZone = Intl.DateTimeFormat().
   const url = new URL(`/course/view.php?id=${courseId}`, config.baseUrl);
   return withAuthenticatedPage(url.toString(), async page => {
     const destination = new URL(page.url());
-    if (destination.origin !== url.origin || destination.pathname !== url.pathname || destination.searchParams.get('id') !== String(courseId)) throw new Error('Moodle did not open the requested course.');
+    if (destination.origin !== url.origin || destination.pathname !== url.pathname || destination.searchParams.get('id') !== String(courseId)) throw new MoodleError('course-unavailable');
     await page.locator('#region-main').waitFor();
-    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+    await page.locator('.course-content').first().waitFor({ state: 'attached', timeout: 20000 });
     const raw = await page.locator('#region-main a[href*="/mod/"], .course-content a[href*="/mod/"]').evaluateAll(links => links.map(link => ({
       href: link.href, title: link.innerText,
       section: link.closest('.section, .course-section, [data-for="section"]')?.querySelector('.sectionname, [data-for="section_title"]')?.textContent,
@@ -24,9 +26,10 @@ export async function listCoursework(courseId, timeZone = Intl.DateTimeFormat().
     for (const item of activities) {
       const record = { ...item, kind: item.type === 'quiz' ? (/\b(exam|midterm|final)\b/i.test(item.title) ? 'exam' : 'quiz') : 'homework' };
       try {
-        await page.goto(item.url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await openMoodlePage(page, item.url, { timeout: 20000 });
+        await page.waitForLoadState('domcontentloaded', { timeout: 3000 }).catch(() => {});
         const finalUrl = new URL(page.url());
-        if (finalUrl.origin !== url.origin || finalUrl.pathname !== `/mod/${item.type}/view.php`) throw new Error('Unexpected destination.');
+        if (finalUrl.origin !== url.origin || finalUrl.pathname !== `/mod/${item.type}/view.php` || finalUrl.searchParams.get('id') !== item.id) throw new Error('Unexpected destination.');
         const detail = await page.evaluate(extractDetailDom);
         if (detail.login || !detail.content) throw new Error('Coursework content unavailable.');
         Object.assign(record, deadlineDetails(detail.entries, timeZone), completionDetails(detail.entries, detail.attemptStates), { description: cleanText(detail.description).slice(0, 4000), detailsRead: true });

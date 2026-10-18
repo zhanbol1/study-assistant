@@ -5,6 +5,7 @@ import { config } from '../config.js';
 import { cleanText } from '../security/sanitize.js';
 import { withAuthenticatedPage } from './session.js';
 import { normalizeActivities } from './activities.js';
+import { openMoodlePage } from './navigation.js';
 
 const numeric = value => { if (!/^\d{1,15}$/.test(String(value))) throw new Error('Invalid Moodle ID.'); };
 const courseUrl = id => `${config.baseUrl.replace(/\/$/, '')}/course/view.php?id=${id}`;
@@ -12,7 +13,7 @@ async function activitiesOn(page, courseId) {
   const url = new URL(page.url());
   if (url.origin !== new URL(config.baseUrl).origin || url.pathname !== '/course/view.php' || url.searchParams.get('id') !== String(courseId)) throw new Error('The requested course did not open.');
   await page.locator('#region-main').waitFor();
-  await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+  await page.locator('.course-content').first().waitFor({ state: 'attached', timeout: 20000 });
   return normalizeActivities(await page.locator('#region-main a[href*="/mod/"], .course-content a[href*="/mod/"]').evaluateAll(links => links.map(link => ({ href: link.href, title: link.innerText }))));
 }
 const resourceFile = activity => ({ id: `activity:${activity.id}`, activityId: activity.id, title: activity.title, type: activity.type, sourceUrl: activity.url });
@@ -34,11 +35,11 @@ export function normalizeFileLinks(links, activity) {
 export async function filesForActivity(page, activity) {
   if (activity.type === 'resource') return [resourceFile(activity)];
   if (!['assign', 'quiz', 'folder'].includes(activity.type)) throw new Error('This activity does not expose downloadable attachments.');
-  await page.goto(activity.url, { waitUntil: 'domcontentloaded' });
+  await openMoodlePage(page, activity.url);
   const url = new URL(page.url());
   if (url.origin !== new URL(config.baseUrl).origin || url.pathname !== `/mod/${activity.type}/view.php` || url.searchParams.get('id') !== activity.id) throw new Error('The requested activity did not open.');
   await page.locator('#region-main').waitFor();
-  if (activity.type === 'folder') await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+  if (activity.type === 'folder') await page.locator('#region-main .foldertree, #region-main [role="tree"], #region-main [id^="folder_tree"]').first().waitFor({ state: 'attached', timeout: 15000 });
   const selector = activity.type === 'folder' ? '#region-main a[href*="/pluginfile.php/"]' : '#intro a[href*="/pluginfile.php/"], .activity-description a[href*="/pluginfile.php/"]';
   const links = await page.locator(selector).evaluateAll(links => links.map(link => ({ href: link.href, title: link.textContent })));
   const files = normalizeFileLinks(links, activity);

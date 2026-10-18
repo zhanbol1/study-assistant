@@ -1,6 +1,8 @@
 import { config } from '../config.js';
 import { cleanText, sanitizeUrl } from '../security/sanitize.js';
 import { waitForMoodleContent, withAuthenticatedPage } from './session.js';
+import { MoodleError } from './errors.js';
+import { openMoodlePage } from './navigation.js';
 
 const COURSE_LINK_SELECTOR = [
   '[data-region="course-content"] a[href*="/course/view.php?id="]',
@@ -17,7 +19,18 @@ const COURSE_CARD_SELECTOR = [
 ].join(', ');
 
 export async function listCourses() {
-  return withAuthenticatedPage(config.coursesUrl, async (page) => {
+  return withAuthenticatedPage(config.coursesUrl, async page => {
+    try { return await readCoursesFromPage(page); }
+    catch (error) {
+      if (error.code !== 'courses-not-loaded') throw error;
+      // Retry only a stalled read, within the same authenticated browser.
+      await openMoodlePage(page, config.coursesUrl);
+      return readCoursesFromPage(page);
+    }
+  });
+}
+
+export async function readCoursesFromPage(page) {
     await waitForMoodleContent(page);
     let links = await page.locator(COURSE_LINK_SELECTOR).evaluateAll((elements) =>
       elements.map((element) => ({
@@ -37,8 +50,9 @@ export async function listCourses() {
         }),
       );
     }
-    return normalizeCourses(links);
-  });
+    const courses = normalizeCourses(links);
+    if (!courses.length) throw new MoodleError('courses-empty', 'Moodle currently shows no courses. Check the course-overview filters in Moodle; this does not establish that you have no homework.');
+    return courses;
 }
 
 export function normalizeCourses(links) {

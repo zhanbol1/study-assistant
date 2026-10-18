@@ -94,11 +94,11 @@ async function readMoodle(operation, courseId, background = false, signal) {
         }
         else
           finish(
-            new Error(
+            Object.assign(new Error(
               typeof message?.error === "string"
                 ? message.error
                 : "Moodle sync failed.",
-            ),
+            ), { code: message?.errorCode || "read-failed", retryable: message?.retryable === true }),
           );
       });
       child.on("exit", () =>

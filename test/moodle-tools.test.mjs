@@ -83,6 +83,34 @@ test("failed reads are returned as errors, never as an empty or stale coursework
   } finally { store.close(); }
 });
 
+test("overview timeouts preserve cached courses and expose a retryable loading failure", async () => {
+  const store = createStore(":memory:");
+  store.cacheCourses(courses);
+  const execute = createMoodleTools({ store, sources: [], read: async () => {
+    throw Object.assign(new Error("Moodle did not load the course overview."), { code: "courses-not-loaded", retryable: true });
+  } });
+  try {
+    const result = await execute(call("list_courses"));
+    assert.equal(result.errorCode, "courses-not-loaded");
+    assert.equal(result.retryable, true);
+    assert.equal(result.courses, undefined);
+    assert.equal(store.snapshot().courses[0].id, courses[0].id);
+  } finally { store.close(); }
+});
+
+test("courses with resources but no assignment modules prompt a file lookup", async () => {
+  const store = createStore(":memory:");
+  const execute = createMoodleTools({ store, sources: [], read: async operation => operation === "courses" ? courses : { assignments: [], activityCount: 15 } });
+  try {
+    await execute(call("list_courses"));
+    const result = await execute(call("get_coursework", { course_id: "10", kind: "all" }));
+    assert.equal(result.activity_count, 15);
+    assert.deepEqual(result.items, []);
+    assert.match(result.instruction, /list_files\/read_slides/);
+    assert.match(result.instruction, /Do not conclude there is no homework/);
+  } finally { store.close(); }
+});
+
 test("cancellation interrupts a Moodle operation and prevents message persistence", async () => {
   const store = createStore(":memory:");
   let started;

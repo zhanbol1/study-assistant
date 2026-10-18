@@ -76,6 +76,8 @@ The reader targets `https://ucasaslms.org/` and can read courses, assignment/qui
 
 Only the rendered Moodle course overview and visible activities can be checked. Filters, pagination, hidden content, unavailable details and login requirements can limit coverage. Headless login may fail when SSO/MFA requires interaction. Each operation opens a fresh browser. A course may contain up to 200 activities; each worker has a ten-minute timeout, and the whole chat request has a fifteen-minute limit. Tool calls and rounds are bounded. A broad lookup can take several minutes; ask about a specific course to narrow it.
 
+Moodle reads wait for page content rather than unrelated images or background requests. Transient navigation failures and a stalled course overview each get one retry. Loading failures, rejected credentials and server errors are reported separately; a failed course-list read keeps the previous cache. A course without standard assignment/quiz modules may still have homework in lecture files: the assistant is instructed to inspect those files using your Memory rules.
+
 Visible coursework is not necessarily outstanding work. The reader captures explicit English submission-status rows and quiz-attempt state when available: submitted, not submitted, draft, attempt finished, in progress or unknown. A submitted assignment is not necessarily graded; a finished quiz attempt is not necessarily a final result. Missing status stays unknown, and old activities may remain visible. Apply your Memory rules while keeping evidence distinct from personal labels. Quiz titles containing "exam", "midterm" or "final" are categorized as exams. Availability windows are not necessarily an exam sitting. Missing, ambiguous, conflicting, unsupported or unreadable deadlines stay unknown. The reader recognizes machine timestamps, ISO timestamps and explicit English dates with a clock time, interpreted in the configured Moodle zone when needed. Failed reads are returned as errors, not empty coursework lists. Check important details using the cited Moodle links.
 
 Remove stored credentials with `npm.cmd run credentials:delete`. See the [LMS agent guide](lms-agent/README.md) for standalone commands. The optional bridge is not needed by the desktop app.
@@ -104,9 +106,12 @@ npm.cmd test
 npm.cmd run test:desktop
 npm.cmd run test:ui
 npm.cmd run test:coursework
+npm.cmd run test:moodle:offline
 ```
 
 `test:ui` requires the preview server. It checks sidebar navigation, Memory editing and persistence, unsaved-draft protection, saved page CRUD and tables, Downloads, inline connections and responsive widths. Its screenshot is `.runtime/chat.png`.
+
+`test:moodle:offline` uses local HTTP fixtures to check sign-in redirects, stalled images, delayed course cards, rejected credentials, server errors and external sign-in boundaries without accessing your Moodle account.
 
 Unit tests cover storage compatibility, memory.md persistence and external-edit conflicts, saved-page revisions and sources, credential renewal between tool rounds, submission evidence, file discovery, download boundaries, deadline extraction, retrieval, encrypted credentials, OAuth verification, streaming, tool validation, multiple rounds, cancellation and bounded execution. Legacy scheduler unit tests remain for retained historical code; the app no longer starts that scheduler.
 

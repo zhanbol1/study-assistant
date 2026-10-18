@@ -18,6 +18,7 @@
     "test:ui": "node scripts/verify-ui.mjs",
     "test:desktop": "node scripts/verify-desktop.mjs",
     "test:coursework": "node scripts/verify-coursework.mjs",
+    "test:moodle:offline": "node scripts/verify-moodle-navigation.mjs",
     "test:moodle:live": "node scripts/verify-moodle.mjs",
     "test:slides:live": "node scripts/verify-slides-live.mjs",
     "test:ai:live": "node scripts/verify-ai-live.mjs",

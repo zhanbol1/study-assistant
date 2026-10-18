@@ -133,13 +133,13 @@ export function createMoodleTools({ read, store, sources, progress = () => {}, s
         // Include a source even when no assignments are visible.
         const reference = `M${sources.filter(source => source.reference.startsWith("M")).length + 1}`;
         sources.push({ id: `course:${course.id}`, reference, title: course.name, sourceUrl: moodleUrl(course.url), content: `Checked ${checkedAt}. ${items.length} visible homework, quiz or exam activities. Hidden activities and missing completion evidence are not available.` });
-        coursework.set(course.id, { course: course.name, checkedAt, reference, items });
+        coursework.set(course.id, { course: course.name, checkedAt, reference, activity_count: result.activityCount ?? result.assignments.length, items });
       }
       const result = coursework.get(course.id);
-      return { ...result, items: result.items.filter(item => args.kind === "all" || item.kind === args.kind), limitations: "Visible activities only. Missing deadlines and missing completion evidence are unknown. A past deadline does not mean work is complete. A finished quiz attempt does not establish a final grade. Compare explicit dates to today and apply the user's Memory rules without inventing evidence." };
+      return { ...result, items: result.items.filter(item => args.kind === "all" || item.kind === args.kind), instruction: result.items.length === 0 && result.activity_count > 0 ? "This course has other activities but no standard assignment/quiz entries. Do not conclude there is no homework. Follow Memory and inspect course files/lecture folders with list_files/read_slides when looking for homework." : "Use only the returned evidence.", limitations: "Visible activities only. Missing deadlines and missing completion evidence are unknown. A past deadline does not mean work is complete. A finished quiz attempt does not establish a final grade. Compare explicit dates to today and apply the user's Memory rules without inventing evidence." };
     } catch (error) {
       signal?.throwIfAborted();
-      return { error: error.message, instruction: "Report this limitation. Do not invent coursework or treat an unread course as empty." };
+      return { error: error.message, errorCode: error.code || "read-failed", retryable: error.retryable === true, instruction: "Report the specific failure and recovery step. Do not call a page-loading timeout a rejected password or a total connection failure. Do not repeatedly retry sign-in. Do not invent coursework or treat an unread course as empty." };
     }
   };
 }

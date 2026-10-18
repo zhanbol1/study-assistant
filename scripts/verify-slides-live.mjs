@@ -13,6 +13,8 @@ const { listCourseFiles } = await import("../lms-agent/src/browser/files.js");
 const { readCourseSlides } = await import("../lms-agent/src/browser/presentation.js");
 const { withAuthenticatedPage } = await import("../lms-agent/src/browser/session.js");
 const inspect = process.argv.includes("--inspect-first-folder");
+const courseArg = process.argv.indexOf("--course");
+const requestedCourse = courseArg >= 0 ? process.argv[courseArg + 1]?.toLowerCase() : null;
 const store = createStore(":memory:");
 const sources = [];
 const execute = createMoodleTools({ store, sources, read: async (operation, args) => {
@@ -31,7 +33,8 @@ try {
   console.log(JSON.stringify({ visibleCourses: courses.length }));
   if (!courses.length) throw new Error("No Moodle courses are visible. Check login and the course-overview filters before repeating this live check.");
   // Prefer recent course cards; inspect at most eight courses and six folders.
-  const selected = [...courses.slice(4), ...courses.slice(0, 4)].slice(0, 8);
+  const selected = requestedCourse ? courses.filter(course => course.name.toLowerCase().includes(requestedCourse)) : [...courses.slice(4), ...courses.slice(0, 4)].slice(0, 8);
+  if (!selected.length) throw new Error("The requested course is not in the visible course overview.");
   let folders = 0, found = false;
   for (const [index, course] of selected.entries()) {
     console.log(JSON.stringify({ checkingCourse: index + 1 }));

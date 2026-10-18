@@ -1,6 +1,6 @@
 # UCA LMS Agent
 
-Local Moodle discovery, course browsing, and resource downloads for `https://ucasaslms.org/`, controlled by Codex. Playwright performs browser actions, and Windows Credential Manager stores LMS credentials at rest. The app has no upload or assignment-submission commands.
+The Moodle backend for [Study Assistant](../README.md), with standalone discovery commands and an optional local bridge for `https://ucasaslms.org/`. Playwright performs browser actions, and Windows Credential Manager stores LMS credentials at rest. The desktop app calls the backend directly; it does not require the bridge. No upload or assignment-submission commands are provided.
 
 ## Security boundary
 
@@ -39,7 +39,7 @@ $env:LMS_HEADLESS = 'false'
 npm.cmd run discover
 ```
 
-Login automation recognizes URLs containing `/login` and common username/password fields. After submitting credentials, it waits up to 60 seconds for the URL to leave `/login`. SSO and MFA flows may require interaction and are not generally supported by these checks.
+Login automation recognizes URLs containing `/login` and common username/password fields. After submitting credentials, it waits up to 45 seconds for navigation away from `/login` or a visible login error. It waits for relevant Moodle content rather than unrelated images or the full page-load event. External sign-in redirects are rejected before credentials are filled; SSO/MFA flows are not generally supported. Showing the browser does not make unsupported authentication flows work automatically.
 
 Sanitized output is written to `artifacts/discovery.json`. Treat assignment and course names in that file as private educational data.
 
@@ -94,11 +94,15 @@ node src/bridge/client.js download 1217 501
 
 Replace the example IDs with a course ID returned by course listing and an activity ID returned by activity listing. Assignment listing returns titles, sections, and links found on the course page; it does not retrieve assignment details or submissions.
 
-The desktop app's **Import coursework** uses a separate coursework reader. It reads assignment and quiz detail pages, descriptions, explicit deadlines, quiz availability windows, and date evidence. It supports machine timestamps and explicit English dates interpreted in the time zone configured in desktop Settings. Uncertain dates remain unknown; submissions and quiz attempts are never opened. The standalone assignment-listing command retains its title/section/link response.
+The desktop chat's `get_coursework` tool uses a separate coursework reader. It reads assignment and quiz detail pages, descriptions, explicit deadlines, quiz availability windows, and available submission/attempt-status evidence. It supports machine timestamps and explicit English dates interpreted in the Moodle time zone configured beneath chat. Uncertain dates and missing completion evidence remain unknown. It never submits work or starts a quiz attempt. There is no manual Import coursework section in the current UI. The standalone assignment-listing command retains its title/section/link response.
 
-Downloads accept only Moodle `resource` or `folder` activities found in the selected course. Folder downloads request a ZIP archive; resource downloads request the activity URL and follow redirects. The app saves the response body without validating that it is the intended file, so a resource page may be saved as HTML instead of its linked document.
+The bridge download command accepts Moodle `resource` or `folder` activities discovered in the selected course. The desktop additionally lists individual folder files and introductory assignment/quiz attachments. Folder downloads request a ZIP archive; resource downloads follow redirects only within the configured Moodle origin. An HTML page without an attachment disposition is rejected instead of being saved as a document. This does not establish that every downloaded file is valid; PPTX parsing performs separate archive and XML checks.
 
-Files are saved under `downloads/`, with the activity ID prefixed to a sanitized filename. Repeating a download with the same filename overwrites the existing local file. Responses larger than 100 MiB (104,857,600 bytes) are rejected before saving, but only after the entire response has been downloaded into memory. This is not a network-transfer or memory-use limit.
+Files are saved under `downloads/`, with the activity ID and a random suffix prefixed to a sanitized filename. New downloads do not overwrite existing files. In the desktop's shared browser context, valid local copies can be reused after an authenticated conditional request confirms an unchanged ETag or Last-Modified value. File size and SHA-256 are checked before reuse. Changes, missing local copies and contexts without a cached record require another download.
+
+Each transfer attempt has a 60-second timeout, with one retry for transient failures. Responses larger than 100 MiB (104,857,600 bytes) are rejected before saving. The request API buffers the response before the size checks, so this is not a network-transfer or memory-use limit. The desktop exposes distinct errors for login rejection, page-loading failure, server errors and file-transfer timeouts.
+
+The desktop `read_slides` tool reads individual PPTX files, including files inside Moodle folders. It extracts text and speaker notes with slide-number references and paginated responses. It does not interpret slide images, extract folder ZIP contents, or read PDF, Word or legacy PPT formats. See the parent README for limits, Memory instructions and example prompts.
 
 "Read-only" means the app provides no course-editing, upload, or submission operations. It still signs in, opens Moodle pages, and writes local discovery artifacts and downloaded files; Moodle may record login, access, or activity-completion events.
 
@@ -108,4 +112,12 @@ Files are saved under `downloads/`, with the activity ID prefixed to a sanitized
 npm.cmd test
 ```
 
-The current tests cover URL sanitization, discovery output filtering, and course, assignment, and activity normalization. They do not verify live LMS login, SSO/MFA, bridge authentication, or downloads.
+This directory's unit tests cover URL sanitization, discovery output filtering, and course, assignment, and activity normalization. Run the broader checks from the repository root:
+
+```powershell
+npm.cmd test
+npm.cmd run test:coursework
+npm.cmd run test:moodle:offline
+```
+
+Root tests also cover worker and browser reuse, cancellation, credential changes, conditional downloads, revoked access, file integrity and PPTX extraction. Browser fixtures check session expiry, delayed content, login errors and download retries without using a real account. These checks do not establish that live Moodle, external SSO/MFA or the optional bridge will work in every environment. Account-connected checks are documented in the parent README.

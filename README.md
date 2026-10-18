@@ -11,6 +11,22 @@ Ask questions such as:
 
 The assistant discovers your visible Moodle courses, reads relevant homework and quiz pages, and returns an answer with sources and Moodle links. The left sidebar contains Chat, Memory, Downloads and pages you ask the AI to save, such as Homework or Overview. ChatGPT/API connections and Moodle time-zone settings remain below the chat composer. Existing records and credentials remain compatible; old scheduled routines and notifications do not run.
 
+## Current project status
+
+This is a working development app for the UCA Moodle site, with no packaged installer yet. Its interface centers on chat; Homework and Overview are pages you create or ask the assistant to save, rather than built-in live dashboards.
+
+| Capability | Current behavior |
+| --- | --- |
+| AI connection | ChatGPT sign-in for an eligible existing plan, or an OpenAI API key; connection controls are below chat. |
+| Homework and quizzes | Reads visible course activities, explicit deadlines and available submission/attempt evidence. |
+| Lecture folders | Lists individual files inside Moodle folders and reads PPTX text and speaker notes with slide citations. |
+| Memory | An editable `memory.md` file supplies course-specific instructions on every request. |
+| Sidebar pages | You or the assistant can save and update Markdown pages with source references. |
+| Downloads | Saves discovered files locally and reveals them from the sidebar. |
+| Faster follow-up reads | Reuses a Moodle login and conditionally reuses unchanged downloads and parsed slides. |
+
+PDF/Word/legacy PPT reading, visual slide interpretation, automatic page refresh, scheduled notifications and Moodle submissions are not implemented. File discovery and downloading do not imply that a file's contents have been read.
+
 ## Run
 
 Requires Node.js 22.13 or newer and npm:
@@ -21,6 +37,18 @@ npm.cmd start
 ```
 
 `start` builds the interface and launches Electron. This is a development build, without an installer. `npm.cmd run dev` enables live UI updates.
+
+For a first installation with Moodle access, install the separate browser dependencies and save your login before starting:
+
+```powershell
+npm.cmd install
+npm.cmd run lms:install
+npm.cmd run lms:browser
+npm.cmd run credentials:set
+npm.cmd start
+```
+
+Run these commands from the repository root under your own Windows account. Enter the Moodle password only in the local credential prompt. After launch, choose your AI connection beneath chat and set the Moodle display time zone. General chat and imported notes can be used without connecting Moodle. After updating the project, close and restart the desktop app to load backend changes; the development UI's live updates do not restart the Moodle worker.
 
 ## Connect AI
 
@@ -35,6 +63,19 @@ ChatGPT mode uses your plan allowance and never silently switches to API billing
 Open **Memory** in the sidebar to edit the assistant's study instructions. The real UTF-8 file is `memory.md` beside `study.sqlite` in the app-data folder. **Show memory.md in folder** locates it so you can edit it with your own text editor. **Load saved version** rereads external changes. Saves detect conflicting edits rather than silently replacing a newer version.
 
 Memory is included in every AI request, up to 20,000 characters. Use it for course-specific rules, where to look for homework, your definition of finished work, deadline/grace-period preferences and how you want answers organized. The starter file distinguishes submissions, finished quiz attempts, passed deadlines and unknown status. Preferences cannot create missing Moodle evidence. Current chat instructions take precedence over preferences. The AI has no tool to rewrite Memory.
+
+For example, you can add course-specific instructions like:
+
+```markdown
+## Discrete Math
+- Look in the lecture folders for PPTX slides and check the final slides for homework.
+- Include the lecture name and slide number for each exercise you find.
+- If no assignment or quiz module exists, check lecture files before concluding there is no homework.
+- Only mark work complete when Moodle shows a submission or I explicitly say I finished it.
+- Keep past-deadline work separate from completed work; report missing deadlines as unknown.
+```
+
+These instructions guide the next lookup; they do not automatically scan Moodle or refresh saved pages.
 
 Try **"Create and save a Homework page in the sidebar"**, **"Create an Overview of my study week"**, or **"Update my Homework page from Moodle"**. The assistant can list/read saved pages and create or update them using workspace tools. Pages store Markdown text, source references and update time. Headings, lists, checklists and tables display as formatted text; arbitrary HTML or executable widgets are not supported. These are saved snapshots, not automatic live dashboards. Ask the AI to refresh them when needed.
 
@@ -57,6 +98,8 @@ The reader extracts text, table-cell text and speaker notes in presentation orde
 Images, diagrams, embedded charts, equations and animations are not visually interpreted. Image-only slides are identified by missing extracted text and image counts. The assistant must disclose unread ranges and any text truncation. Reading is paginated (up to 20 slides and roughly 24,000 text characters per tool response), with a next-slide pointer. A message can read up to five presentations and return up to 150,000 characters. Each deck is limited to 500 slides and one million extracted characters, with separate compressed-file and XML expansion limits. Malformed, encrypted and unsupported files produce a clear error rather than an invented summary.
 
 Optional account verification: `npm.cmd run test:slides:live` discovers folders, downloads one PPTX into `.runtime/slides-live`, and prints slide/text counts only. It sends no content to an AI provider.
+
+To narrow the live check to a course-name substring, use `npm.cmd run test:slides:live -- --course "Discrete"`. This is an account-connected diagnostic, not an offline test or a benchmark of the desktop's shared worker.
 
 ## Connect Moodle
 
@@ -83,6 +126,26 @@ Moodle reads wait for page content rather than unrelated images or background re
 Visible coursework is not necessarily outstanding work. The reader captures explicit English submission-status rows and quiz-attempt state when available: submitted, not submitted, draft, attempt finished, in progress or unknown. A submitted assignment is not necessarily graded; a finished quiz attempt is not necessarily a final result. Missing status stays unknown, and old activities may remain visible. Apply your Memory rules while keeping evidence distinct from personal labels. Quiz titles containing "exam", "midterm" or "final" are categorized as exams. Availability windows are not necessarily an exam sitting. Missing, ambiguous, conflicting, unsupported or unreadable deadlines stay unknown. The reader recognizes machine timestamps, ISO timestamps and explicit English dates with a clock time, interpreted in the configured Moodle zone when needed. Failed reads are returned as errors, not empty coursework lists. Check important details using the cited Moodle links.
 
 Remove stored credentials with `npm.cmd run credentials:delete`. See the [LMS agent guide](lms-agent/README.md) for standalone commands. The optional bridge is not needed by the desktop app.
+
+## Response time and troubleshooting
+
+The first Moodle lookup includes Chromium startup and sign-in. Later tool calls reuse the authenticated session, but still navigate to current course pages. A lecture question can require course discovery, folder listing, a file transfer and several slide-reading or AI rounds. Session reuse removes repeated sign-ins; it cannot make an unavailable Moodle server respond or eliminate the first download of a file.
+
+File transfers have a 60-second timeout per attempt and one retry for transient failures. Course-overview loading and transient page navigation also have bounded retries. A server-side file stall can therefore delay the answer even when login and course browsing work. The chat displays lookup progress; **Stop response** cancels the request and retires its Moodle session. A later request starts a new session.
+
+| Symptom | What to do |
+| --- | --- |
+| Slow first response | Allow for sign-in and file access; ask about a specific course, lecture or slide range to reduce the number of reads. |
+| File-transfer timeout | Retry later or open the cited file directly in Moodle. Course access may still be working; changing the password does not resolve a stalled transfer. |
+| Course overview did not load | Retry or check the overview in Moodle. Failed reads preserve the previous cache and do not establish that courses or homework are missing. |
+| Expected course is missing | Check Moodle's overview filters, pagination and course availability. The reader does not change filters or traverse pagination. |
+| Saved login rejected or missing | Run `npm.cmd run credentials:set` under the Windows account running the app. Changed or removed credentials invalidate the session on the next lookup. |
+| External sign-in, SSO or MFA | The automatic password flow may not support it. Check access in Moodle; an external browser login does not populate the app's isolated session. |
+| Chromium or dependencies missing | Run `npm.cmd run lms:install` and `npm.cmd run lms:browser`, then restart the app. |
+| No standard assignments found | Homework may be in lecture files. Add the location to Memory or explicitly ask the assistant to inspect the relevant folder and PPTX slides. |
+| Answer omits some slides | Ask it to continue from the unread range. Text extraction cannot interpret images or diagrams. |
+
+Completed downloads and saved pages survive cancellation or a later failed answer. Saved pages remain snapshots until you ask to update them.
 
 ## Chat, materials and data
 
@@ -126,6 +189,8 @@ Optional live checks: `npm.cmd run test:moodle:live` reads your Moodle account a
 ```text
 src/                        Chat, Memory, Downloads and saved-page UI
 desktop/main.mjs            Validated IPC and cancellable Moodle workers
+desktop/moodle-client.mjs   Shared worker, request IDs, idle expiry and cancellation
+desktop/moodle-worker.mjs   Isolated Moodle operations and safe error reporting
 desktop/ai.mjs              Credentials, retrieval, Responses transport and tool loop
 desktop/moodle-tools.mjs    Moodle schemas, file discovery and download tools
 desktop/workspace-tools.mjs Saved-page tools and citation validation
@@ -134,6 +199,7 @@ desktop/response-stream.mjs Completed SSE reconstruction
 desktop/chatgpt-auth.mjs    Verified ChatGPT authorization and token lifecycle
 desktop/store.mjs           Compatible SQLite records and imports
 lms-agent/src/browser/      Moodle readers, folder files and bounded PPTX extraction
+lms-agent/src/browser/reusable-session.js In-memory browser session and credential invalidation
 test/ and scripts/         Unit, browser, native and live checks
 ```
 

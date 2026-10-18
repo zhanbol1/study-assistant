@@ -37,6 +37,13 @@ try {
     .getByRole("dialog")
     .getByRole("heading", { name: "UI verification exam" })
     .waitFor();
+  await dialog.getByRole("button", { name: "Edit task", exact: true }).click();
+  assert.equal(await dialog.locator('[name="dueAt"]').inputValue(), "2026-12-04T14:30");
+  await dialog.locator('[name="notes"]').fill("Edited study notes");
+  await dialog.locator('[name="dueAt"]').fill("2026-12-05T09:15");
+  await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
+  await page.getByRole("button", { name: "View UI verification exam", exact: true }).click();
+  await dialog.getByText("Edited study notes", { exact: true }).waitFor();
   await page
     .getByRole("button", { name: "Mark complete", exact: true })
     .click();
@@ -49,6 +56,11 @@ try {
   await page
     .getByRole("button", { name: "View UI verification exam", exact: true })
     .waitFor();
+  await page.getByRole("button", { name: "View UI verification exam", exact: true }).click();
+  await dialog.getByRole("button", { name: "Edit task", exact: true }).click();
+  assert.equal(await dialog.locator('[name="notes"]').inputValue(), "Edited study notes");
+  assert.equal(await dialog.locator('[name="dueAt"]').inputValue(), "2026-12-05T09:15");
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await page
     .getByRole("button", { name: "Study routines", exact: true })
     .click();
@@ -94,7 +106,7 @@ try {
   }
   assert.deepEqual(errors, [], "No uncaught renderer errors");
   console.log(
-    "UI checks passed: add/detail/complete task, persistence, routine creation, sync error, AI status, and responsive layouts.",
+    "UI checks passed: add/detail/edit/complete task, edited deadline and notes persistence, routine creation, sync error, AI status, and responsive layouts.",
   );
 } finally {
   await browser.close();

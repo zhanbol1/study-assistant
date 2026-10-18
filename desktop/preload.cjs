@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld(
   Object.freeze({
     snapshot: () => ipcRenderer.invoke("study:snapshot"),
     addTask: (input) => ipcRenderer.invoke("study:add-task", input),
+    updateTask: (id, input) => ipcRenderer.invoke("study:update-task", id, input),
     toggleTask: (id) => ipcRenderer.invoke("study:toggle-task", id),
     deleteTask: (id) => ipcRenderer.invoke("study:delete-task", id),
     addRoutine: (input) => ipcRenderer.invoke("study:add-routine", input),

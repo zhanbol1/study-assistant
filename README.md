@@ -6,10 +6,10 @@ A local desktop study workspace, starting with Windows and structured for future
 
 - Overview with task counts, a seven-day calendar, search, and status filters.
 - Add homework, exams, quizzes, and study sessions with optional deadlines and notes.
-- Complete, reopen, and remove tasks. Deadlines entered in local time are stored as UTC.
+- Edit task titles, courses, types, deadlines, and notes; complete, reopen, and remove tasks. Deadlines entered in local time are stored as UTC.
 - Save study routine instructions locally.
 - Sync visible UCA Moodle courses and import assignment titles, sections, and source links using the existing Playwright agent.
-- Keep local completion state when importing assignments again.
+- Keep local completion state and edited fields when importing assignments again.
 - Open validated course and assignment links in the default browser.
 - Persist desktop records in SQLite under the operating system's application-data folder.
 
@@ -50,7 +50,7 @@ Open **Courses → Sync courses**, then choose **Import assignments** on an indi
 
 Sync happens only when requested, one operation at a time. The app currently targets `https://ucasaslms.org/`; it does not support entering arbitrary Moodle servers. Moodle course filters and pagination can limit which courses are visible.
 
-Assignment imports do not retrieve due dates, exam dates, descriptions, or submissions. Imported tasks retain an unknown deadline, with a source link to check Moodle. Add dated tasks manually for now. Missing links in a later import do not automatically delete previously imported tasks. Marking a task complete changes this local workspace only.
+Assignment imports do not retrieve due dates, exam dates, descriptions, or submissions. Imported tasks start with an unknown deadline, with a source link to check Moodle. Open a task and choose **Edit task** to record a deadline or add study notes; these edits remain local and survive later imports. Missing links in a later import do not automatically delete previously imported tasks. Marking a task complete changes this local workspace only.
 
 Remove stored credentials:
 

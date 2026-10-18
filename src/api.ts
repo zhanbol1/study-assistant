@@ -88,6 +88,16 @@ const previewApi: StudyApi = {
       const task = state.tasks.find((item) => item.id === id);
       if (task) task.completed = !task.completed;
     }),
+  updateTask: (id, input) =>
+    update((state) => {
+      const task = state.tasks.find((item) => item.id === id);
+      if (!task) throw new Error("Task not found.");
+      task.title = input.title;
+      task.course = input.course;
+      task.notes = input.notes;
+      task.kind = input.kind;
+      task.dueAt = input.dueAt;
+    }),
   deleteTask: (id) =>
     update((state) => {
       state.tasks = state.tasks.filter((item) => item.id !== id);

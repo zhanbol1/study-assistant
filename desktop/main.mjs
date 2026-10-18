@@ -159,6 +159,7 @@ export async function start() {
   });
   handle("study:snapshot", () => store.snapshot());
   handle("study:add-task", (input) => store.addTask(input));
+  handle("study:update-task", (id, input) => store.updateTask(id, input));
   handle("study:toggle-task", (id) => store.toggleTask(id));
   handle("study:delete-task", (id) => store.deleteTask(id));
   handle("study:add-routine", (input) => store.addRoutine(input));

@@ -76,6 +76,13 @@ function deadlineLabel(task: Task) {
   return formatDate(task.dueAt, true);
 }
 
+function localDateTime(value: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 export function App() {
   const [page, setPage] = useState<Page>("Overview");
   const [state, setState] = useState<Snapshot>(empty);
@@ -90,6 +97,7 @@ export function App() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [modal, setModal] = useState<"task" | "routine" | null>(null);
   const [detail, setDetail] = useState<Task | null>(null);
+  const [editing, setEditing] = useState<Task | null>(null);
   useEffect(() => {
     let active = true;
     api
@@ -991,10 +999,13 @@ export function App() {
       {modal && (
         <Modal
           title={
-            modal === "task" ? "A new step forward" : "Save a study routine"
+            modal === "task" ? (editing ? "Edit task" : "A new step forward") : "Save a study routine"
           }
           onClose={() => {
-            if (!busy) setModal(null);
+            if (!busy) {
+              setModal(null);
+              setEditing(null);
+            }
           }}
         >
           <form
@@ -1004,16 +1015,20 @@ export function App() {
               const value = (key: string) => String(data.get(key) || "").trim();
               if (modal === "task") {
                 const due = value("dueAt");
-                void perform("Saving task", () =>
-                  api.addTask({
+                void perform("Saving task", () => {
+                  const input = {
                     title: value("title"),
                     course: value("course"),
                     notes: value("notes"),
                     kind: value("kind") as TaskKind,
                     dueAt: due ? new Date(due).toISOString() : "",
-                  }),
-                ).then((ok) => {
-                  if (ok) setModal(null);
+                  };
+                  return editing ? api.updateTask(editing.id, input) : api.addTask(input);
+                }).then((ok) => {
+                  if (ok) {
+                    setModal(null);
+                    setEditing(null);
+                  }
                 });
               } else {
                 void perform("Saving routine", () =>
@@ -1031,12 +1046,15 @@ export function App() {
             {modal === "task" ? (
               <>
                 <p className="modal-intro">
-                  Homework, an exam, or simply time to study. Make it yours.
+                  {editing?.source === "moodle"
+                    ? "Changes stay in your workspace and are kept when you import again. Moodle is not updated."
+                    : "Homework, an exam, or simply time to study. Make it yours."}
                 </p>
                 <label className="field">
                   What needs doing?
                   <input
                     name="title"
+                    defaultValue={editing?.title || ""}
                     placeholder="e.g. Finish the calculus problem set"
                     required
                     maxLength={200}
@@ -1048,7 +1066,7 @@ export function App() {
                     <select
                       name="kind"
                       defaultValue={
-                        page === "Exams & quizzes" ? "exam" : "homework"
+                        editing?.kind || (page === "Exams & quizzes" ? "exam" : "homework")
                       }
                     >
                       {Object.entries(kindLabels).map(([key, label]) => (
@@ -1062,6 +1080,7 @@ export function App() {
                     Course <span>(optional)</span>
                     <input
                       name="course"
+                      defaultValue={editing?.course || ""}
                       list="course-names"
                       placeholder="e.g. Calculus II"
                       maxLength={200}
@@ -1070,12 +1089,13 @@ export function App() {
                 </div>
                 <label className="field">
                   Deadline <span>(optional · your local time)</span>
-                  <input name="dueAt" type="datetime-local" />
+                  <input name="dueAt" type="datetime-local" defaultValue={localDateTime(editing?.dueAt || "")} />
                 </label>
                 <label className="field">
                   Notes <span>(optional)</span>
                   <textarea
                     name="notes"
+                    defaultValue={editing?.notes || ""}
                     rows={3}
                     placeholder="Anything you’ll want to remember…"
                     maxLength={4000}
@@ -1133,7 +1153,10 @@ export function App() {
                 type="button"
                 disabled={!!busy}
                 className="button secondary"
-                onClick={() => setModal(null)}
+                onClick={() => {
+                  setModal(null);
+                  setEditing(null);
+                }}
               >
                 Cancel
               </button>
@@ -1143,7 +1166,7 @@ export function App() {
                 ) : (
                   <Plus size={16} />
                 )}
-                {modal === "task" ? "Add task" : "Save routine"}
+                {modal === "task" ? (editing ? "Save changes" : "Add task") : "Save routine"}
               </button>
             </div>
           </form>
@@ -1187,6 +1210,18 @@ export function App() {
               Remove
             </button>
             <div>
+              <button
+                className="button secondary"
+                disabled={!!busy}
+                onClick={() => {
+                  setEditing(detail);
+                  setDetail(null);
+                  setError("");
+                  setModal("task");
+                }}
+              >
+                Edit task
+              </button>
               {detail.sourceUrl && (
                 <button
                   className="button secondary"

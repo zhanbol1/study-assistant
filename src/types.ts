@@ -40,6 +40,7 @@ export type RoutineInput = Pick<Routine, "name" | "course" | "instructions">;
 export interface StudyApi {
   snapshot(): Promise<Snapshot>;
   addTask(input: TaskInput): Promise<Snapshot>;
+  updateTask(id: string, input: TaskInput): Promise<Snapshot>;
   toggleTask(id: string): Promise<Snapshot>;
   deleteTask(id: string): Promise<Snapshot>;
   addRoutine(input: RoutineInput): Promise<Snapshot>;

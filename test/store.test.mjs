@@ -34,6 +34,7 @@ test("manual tasks and routines survive reopening the SQLite database", () => {
     const task = store.addTask(input).tasks[0];
     assert.equal(task.dueAt, "2026-11-02T04:00:00.000Z");
     store.toggleTask(task.id);
+    store.updateTask(task.id, { ...input, title: "Review integrals", notes: "Updated notes" });
     store.addRoutine({
       name: "Check announcements",
       course: "Calculus",
@@ -42,6 +43,8 @@ test("manual tasks and routines survive reopening the SQLite database", () => {
     store.close();
     store = createStore(filename);
     assert.equal(store.snapshot().tasks[0].completed, true);
+    assert.equal(store.snapshot().tasks[0].title, "Review integrals");
+    assert.equal(store.snapshot().tasks[0].notes, "Updated notes");
     assert.equal(store.snapshot().routines[0].name, "Check announcements");
     store.deleteTask(task.id);
     assert.equal(store.snapshot().tasks.length, 0);
@@ -92,6 +95,40 @@ test("invalid sync payloads cannot destroy the last successful course snapshot",
       }),
     );
     assert.equal(store.snapshot().tasks.length, 0);
+  } finally {
+    store.close();
+  }
+});
+
+test("edited Moodle fields survive imports while untouched fields refresh", () => {
+  const store = createStore(":memory:");
+  try {
+    store.cacheCourses([course]);
+    const task = store.cacheAssignments(course.id, { assignments: [assignment] }).tasks[0];
+    store.toggleTask(task.id);
+    store.updateTask(task.id, {
+      ...task, notes: "My study notes", dueAt: input.dueAt, kind: "quiz",
+      id: "injected", source: "manual", sourceUrl: "https://evil.example",
+    });
+    let updated = store.cacheAssignments(course.id, {
+      assignments: [{ ...assignment, title: "New Moodle title", section: "New section" }],
+    }).tasks[0];
+    assert.equal(updated.title, "New Moodle title");
+    assert.equal(updated.notes, "My study notes");
+    assert.equal(updated.dueAt, "2026-11-02T04:00:00.000Z");
+    assert.equal(updated.kind, "quiz");
+    assert.equal(updated.completed, true);
+    assert.equal(updated.id, task.id);
+    assert.equal(updated.source, "moodle");
+    assert.equal(updated.sourceUrl, assignment.url);
+    store.updateTask(task.id, { ...updated, dueAt: "", notes: "" });
+    updated = store.cacheAssignments(course.id, { assignments: [assignment] }).tasks[0];
+    assert.equal(updated.dueAt, "");
+    assert.equal(updated.notes, "");
+    assert.throws(() => store.updateTask(task.id, { ...updated, title: " " }));
+    assert.deepEqual(store.snapshot().tasks[0], updated);
+    assert.throws(() => store.updateTask("course:1217", input), /Task not found/);
+    assert.throws(() => store.updateTask("missing", input), /Task not found/);
   } finally {
     store.close();
   }

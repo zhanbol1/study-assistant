@@ -61,6 +61,24 @@ export function createStore(filename) {
       save(id, "task", { ...task, completed: !task.completed });
       return this.snapshot();
     },
+    updateTask(id, input) {
+      text(id, "Task ID", 100);
+      const task = get(id);
+      if (!task || !["manual", "moodle"].includes(task.source))
+        throw new Error("Task not found.");
+      const checked = taskInput(input);
+      const localFields = new Set(task.localFields || []);
+      for (const key of Object.keys(checked)) {
+        if (checked[key] !== task[key]) localFields.add(key);
+      }
+      save(id, "task", {
+        ...task,
+        ...checked,
+        localFields: [...localFields],
+        updatedAt: new Date().toISOString(),
+      });
+      return this.snapshot();
+    },
     deleteTask(id) {
       text(id, "Task ID", 100);
       db.prepare("DELETE FROM records WHERE id = ? AND type = 'task'").run(id);
@@ -117,7 +135,7 @@ export function createStore(filename) {
         numericId(assignment.id);
         const id = `moodle:${courseId}:${assignment.id}`;
         const previous = get(id);
-        return {
+        const imported = {
           id,
           title: text(assignment.title, "Assignment title"),
           course: course.name,
@@ -130,6 +148,14 @@ export function createStore(filename) {
           sourceUrl: moodleUrl(assignment.url),
           checkedAt: new Date().toISOString(),
         };
+        // Refresh Moodle metadata while retaining fields the student has edited.
+        for (const key of previous?.localFields || []) {
+          if (["title", "course", "notes", "dueAt", "kind"].includes(key))
+            imported[key] = previous[key];
+        }
+        if (previous?.localFields) imported.localFields = previous.localFields;
+        if (previous?.updatedAt) imported.updatedAt = previous.updatedAt;
+        return imported;
       });
       db.exec("BEGIN");
       try {

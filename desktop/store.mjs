@@ -1,5 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
+import path from "node:path";
+import { createMemoryFile, defaultMemory, checkMemory, memoryRevision } from "./memory.mjs";
 import {
   taskInput,
   routineInput,
@@ -12,6 +14,7 @@ import {
 } from "./validation.mjs";
 
 export function createStore(filename) {
+  const memoryFile = filename === ":memory:" ? null : createMemoryFile(path.join(path.dirname(filename), "memory.md"));
   const db = new DatabaseSync(filename);
   db.exec(`
     PRAGMA journal_mode = WAL;
@@ -46,8 +49,47 @@ export function createStore(filename) {
         documents: all("document").map(({ content, ...metadata }) => metadata),
         messages: all("message"),
         notices: all("notice"),
+        memory: memoryFile ? memoryFile.read() : get("memory") || { content: defaultMemory, revision: memoryRevision(defaultMemory) },
+        pages: all("page"),
+        downloads: all("download").map(({ path, ...metadata }) => metadata),
       };
     },
+    saveMemory(content, revision) {
+      checkMemory(content);
+      if (memoryFile) memoryFile.save(content, revision);
+      else {
+        if (this.snapshot().memory.revision !== revision) throw new Error("Memory changed elsewhere. Reload before saving.");
+        save("memory", "meta", { content, revision: memoryRevision(content) });
+      }
+      return this.snapshot();
+    },
+    savePage(input) {
+      const title = text(input?.title, "Page title", 100);
+      const content = text(input?.content, "Page content", 30000, true);
+      const previous = input.id ? all("page").find(page => page.id === input.id) : null;
+      if (input.id && !previous) throw new Error("Saved page not found.");
+      if (previous && previous.revision !== input.revision) throw new Error("This page changed. Read the latest version before updating it.");
+      if (!previous && all("page").length >= 50) throw new Error("You can save up to 50 pages.");
+      if (input.sources !== undefined && (!Array.isArray(input.sources) || input.sources.length > 200)) throw new Error("Invalid page sources.");
+      const sources = (input.sources || []).map(source => ({ reference: text(source.reference, "Reference", 30), title: text(source.title, "Source title", 500), ...(source.sourceUrl ? { sourceUrl: moodleUrl(source.sourceUrl) } : {}) }));
+      const page = { id: previous?.id || randomUUID(), title, content, sources, revision: randomUUID(), updatedAt: new Date().toISOString(), createdAt: previous?.createdAt || new Date().toISOString() };
+      save(page.id, "page", page);
+      return page;
+    },
+    deletePage(id, revision) {
+      const page = all("page").find(page => page.id === id);
+      if (!page || page.revision !== revision) throw new Error("Page changed or was removed. Reload before deleting.");
+      db.prepare("DELETE FROM records WHERE id = ? AND type = 'page'").run(id);
+      return this.snapshot();
+    },
+    addDownload(input) {
+      const download = { id: randomUUID(), filename: text(input.filename, "Filename", 250), path: text(input.path, "File path", 2000), bytes: input.bytes, course: text(input.course, "Course", 500), sourceUrl: moodleUrl(input.sourceUrl), createdAt: new Date().toISOString() };
+      if (!Number.isSafeInteger(download.bytes) || download.bytes < 0 || download.bytes > 100 * 1024 * 1024) throw new Error("Invalid downloaded file size.");
+      save(download.id, "download", download);
+      const { path: localPath, ...metadata } = download;
+      return metadata;
+    },
+    download(id) { return all("download").find(file => file.id === id); },
     addTask(input) {
       const task = {
         ...taskInput(input),
@@ -212,6 +254,8 @@ export function createStore(filename) {
           deadlineEvidence: text(assignment.deadlineEvidence, "Date evidence", 1000, true),
           deadlineTimeZone: text(assignment.deadlineTimeZone, "Source time zone", 100, true),
           detailsRead: assignment.detailsRead === true,
+          submissionStatus: ["submitted", "not_submitted", "draft", "attempt_finished", "in_progress"].includes(assignment.submissionStatus) ? assignment.submissionStatus : "unknown",
+          completionEvidence: text(assignment.completionEvidence, "Completion evidence", 1000, true),
           completed: previous?.completed || false,
           source: "moodle",
           sourceUrl: moodleUrl(assignment.url),

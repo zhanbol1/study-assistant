@@ -18,6 +18,7 @@ import { moodleUrl } from "./validation.mjs";
 import { settingsInput } from "./validation.mjs";
 import { createKeyVault, createAssistant, searchDocuments } from "./ai.mjs";
 import { createChatGptAuth } from "./chatgpt-auth.mjs";
+import { managedDownload } from "./downloads.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const devUrl = process.env.STUDY_DEV_URL;
@@ -85,7 +86,12 @@ async function readMoodle(operation, courseId, background = false, signal) {
       child.on("spawn", () => child.postMessage({ operation, courseId, timeZone: store.snapshot().settings.timeZone }));
       child.on("error", () => finish(new Error("Moodle worker could not start.")));
       child.on("message", (message) => {
-        if (message?.ok === true) finish(null, message.result);
+        if (message?.ok === true) {
+          try {
+            if (operation === "download") managedDownload(message.result?.file?.path, path.join(app.getPath("userData"), "moodle/downloads"));
+            finish(null, message.result);
+          } catch { finish(new Error("The downloaded file could not be verified.")); }
+        }
         else
           finish(
             new Error(
@@ -188,7 +194,7 @@ export async function start() {
   store = createStore(path.join(app.getPath("userData"), "study.sqlite"));
   vault = createKeyVault(path.join(app.getPath("userData"), "openai-key.bin"), safeStorage);
   chatgpt = createChatGptAuth({ filename: path.join(app.getPath("userData"), "chatgpt-session.bin"), encryption: safeStorage, openBrowser: url => shell.openExternal(url), onChange: broadcast });
-  assistant = createAssistant({ store, vault, readMoodle, progress: value => {
+  assistant = createAssistant({ store, vault, readMoodle, onChange: broadcast, progress: value => {
     if (window && !window.isDestroyed()) window.webContents.send("study:ai-progress", value);
   }, credentials: () => store.snapshot().settings.aiMode === "chatgpt"
     ? chatgpt.credentials() : { key: vault.read(), model: store.snapshot().settings.model } });
@@ -207,8 +213,18 @@ export async function start() {
     return net.fetch(pathToFileURL(filename).toString());
   });
   handle("study:snapshot", () => store.snapshot());
+  handle("study:memory-save", (content, revision) => { const result = store.saveMemory(content, revision); broadcast(); return result; });
+  handle("study:memory-reveal", () => shell.showItemInFolder(path.join(app.getPath("userData"), "memory.md")));
+  handle("study:page-save", input => { store.savePage(input); broadcast(); return store.snapshot(); });
+  handle("study:page-delete", (id, revision) => { const result = store.deletePage(id, revision); broadcast(); return result; });
+  handle("study:download-reveal", id => {
+    const file = store.download(id);
+    if (!file) throw new Error("Downloaded file not found.");
+    try { shell.showItemInFolder(managedDownload(file.path, path.join(app.getPath("userData"), "moodle/downloads"))); }
+    catch { throw new Error("File was moved, removed, or is outside the downloads folder. Ask the assistant to download it again."); }
+  });
   handle("study:settings", input => {
-    if (input?.aiMode && input.aiMode !== store.snapshot().settings.aiMode) assistant.cancel();
+    if ((input?.aiMode && input.aiMode !== store.snapshot().settings.aiMode) || (input?.model && input.model !== store.snapshot().settings.model)) assistant.cancel();
     const result = store.saveSettings(input);
     return result;
   });
@@ -237,7 +253,7 @@ export async function start() {
     return { snapshot: store.snapshot(), warning: status.warning };
   });
   handle("study:chatgpt-models", async () => { await chatgpt.listModels(); chatgptError = ""; return store.snapshot(); });
-  handle("study:chatgpt-model", id => { chatgpt.selectModel(id); return store.snapshot(); });
+  handle("study:chatgpt-model", id => { chatgpt.selectModel(id); assistant.cancel(); return store.snapshot(); });
   handle("study:chatgpt-welcome", () => { chatgpt.acknowledgeWelcome(); return store.snapshot(); });
   handle("study:chatgpt-usage", () => shell.openExternal("https://chatgpt.com/#settings/Usage"));
   handle("study:ai-send", input => assistant.send(input));

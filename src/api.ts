@@ -5,6 +5,7 @@ export const defaultSettings: Settings = { model: "gpt-4.1-mini", aiMode: "api-k
 const previewKey = "study-assistant-preview-v1";
 function seed(): Snapshot {
   return { tasks: [], courses: [],
+    memory: { content: "# My study instructions\n\nWrite your course rules and study preferences here.\n", revision: "initial" }, pages: [], downloads: [],
     routines: [],
     sync: null,
     settings: { ...defaultSettings }, documents: [], messages: [], notices: [],
@@ -30,6 +31,26 @@ function update(change: (state: Snapshot) => void): Promise<Snapshot> {
 }
 const previewApi: StudyApi = {
   snapshot: async () => read(),
+  saveMemory: (content, revision) => update(state => {
+    if (state.memory.revision !== revision) throw new Error("Memory changed. Reload before saving.");
+    if (content.length > 20000) throw new Error("Memory is limited to 20,000 characters.");
+    state.memory = { content, revision: crypto.randomUUID() };
+  }),
+  revealMemory: async () => { throw new Error("The memory.md file is available in the desktop app."); },
+  savePage: input => update(state => {
+    const previous = state.pages.find(page => page.id === input.id);
+    if (input.id && (!previous || previous.revision !== input.revision)) throw new Error("Page changed. Reload before saving.");
+    if (!input.title.trim() || input.title.length > 100 || input.content.length > 30000) throw new Error("Enter a title and up to 30,000 characters of text.");
+    if (!previous && state.pages.length >= 50) throw new Error("You can save up to 50 pages.");
+    const page = { ...input, id: previous?.id || crypto.randomUUID(), revision: crypto.randomUUID(), sources: input.sources || [], createdAt: previous?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
+    if (previous) state.pages[state.pages.indexOf(previous)] = page; else state.pages.push(page);
+  }),
+  deletePage: (id, revision) => update(state => {
+    const page = state.pages.find(page => page.id === id);
+    if (!page || page.revision !== revision) throw new Error("Page changed. Reload before deleting.");
+    state.pages = state.pages.filter(page => page.id !== id);
+  }),
+  revealDownload: async () => { throw new Error("Downloaded files are available in the desktop app."); },
   saveSettings: input => update(state => { state.settings = { ...state.settings, ...input }; }),
   aiStatus: async () => ({ configured: false }),
   connectAi: async () => { throw new Error("Connect OpenAI in the desktop app. API keys are never stored in the browser preview."); },

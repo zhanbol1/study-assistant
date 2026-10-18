@@ -4,6 +4,7 @@ import { api, isPreview } from "./api";
 import type { AiStatus, ChatMessage, Snapshot } from "./types";
 import { errorMessage } from "./errors";
 import { ConnectionSettings } from "./ConnectionSettings";
+import { RichText } from "./RichText";
 
 export function AssistantPanel({ state, onUpdate }: { state: Snapshot; onUpdate: (state: Snapshot) => void }) {
   const [status, setStatus] = useState<AiStatus>({ configured: false });
@@ -44,7 +45,7 @@ export function AssistantPanel({ state, onUpdate }: { state: Snapshot; onUpdate:
         {!state.messages.length && !busy && <div className="chat-welcome"><span className="welcome-mark"><BookOpen size={28} /></span><p className="eyebrow">YOUR STUDY COMPANION</p><h1>What’s on your mind?</h1><p>Ask a question. Check your homework.<br />Make a little more sense of your study day.</p>
           <div className="suggestions">{["What is my homework?", "Do I have any quizzes?", "Help me plan my study week"].map(text => <button key={text} onClick={() => { setPrompt(text); textarea.current?.focus(); }}>{text}<span aria-hidden="true">↗</span></button>)}</div></div>}
         <div className="messages" role="log" aria-label="Conversation">
-          {state.messages.map(message => <article key={message.id} className={`chat-message ${message.role}`}><div className="message-author">{message.role === "user" ? "You" : "Study Assistant"}</div><div className="message-text">{message.content}</div>
+          {state.messages.map(message => <article key={message.id} className={`chat-message ${message.role}`}><div className="message-author">{message.role === "user" ? "You" : "Study Assistant"}</div><div className="message-text">{message.role === "assistant" ? <RichText text={message.content} /> : message.content}</div>
             {!!message.sources.length && <div className="chat-sources" aria-label="Answer sources">{message.sources.map(source => <details key={source.reference}><summary>[{source.reference}] {source.title}</summary><p>{source.excerpt}</p>{source.sourceUrl && <button className="text-button" onClick={() => void api.openSource(source.sourceUrl!).catch(cause => setError(errorMessage(cause)))}>Open in Moodle ↗</button>}</details>)}</div>}
             {!!message.questions.length && <PracticeQuiz message={message} />}
           </article>)}
@@ -60,7 +61,7 @@ export function AssistantPanel({ state, onUpdate }: { state: Snapshot; onUpdate:
             {busy ? <button type="button" className="send-button" aria-label="Stop response" onClick={() => void api.cancelMessage().catch(cause => setError(errorMessage(cause)))}><Square size={16} /></button> : <button className="send-button" aria-label="Send message" disabled={!prompt.trim()}><ArrowUp size={20} /></button>}
           </div>
         </form>
-        <p className="sharing-note">Chat and requested Moodle information are shared with your selected AI connection. Check important dates in Moodle.</p>
+        <p className="sharing-note">Chat, saved Memory and requested Moodle information are shared with your selected AI connection. Check important dates in Moodle.</p>
         <details className="connections" open={connections} onToggle={event => setConnections(event.currentTarget.open)}><summary><span className={`connection-dot ${status.configured ? "connected" : ""}`} /><span>{connection}</span><ChevronDown size={14} /><span className="connection-label">Connections</span></summary><div className="connection-content">{isPreview && <p className="info-banner">Browser preview. Connect accounts and use Moodle tools in the desktop app.</p>}<ConnectionSettings state={state} onUpdate={onUpdate} /></div></details>
       </div>
     </main>

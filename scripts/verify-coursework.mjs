@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { extractDetailDom, deadlineDetails } from "../lms-agent/src/browser/deadlines.js";
+import { completionDetails } from "../lms-agent/src/browser/completion.js";
 
 const root = path.resolve(fileURLToPath(new URL("../", import.meta.url)));
 process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(root, "lms-agent/.playwright-browsers");
@@ -28,5 +29,13 @@ try {
   assert.equal(activities.length, 1);
   assert.equal(activities[0].type, "quiz");
   assert.ok(!activities[0].url.includes("private"));
-  console.log("Coursework browser fixtures passed: assignment due date, quiz windows, machine timestamps, source sanitization, and unknown-date handling.");
+  await page.setContent('<main id="region-main"><table class="submissionstatustable"><tr><th>Submission status</th><td>Submitted for grading</td></tr></table><table class="quizattemptsummary"><tr><th>Attempt</th><th>State</th></tr><tr><td>1</td><td>Finished</td></tr></table></main>');
+  detail = await page.evaluate(extractDetailDom);
+  assert.equal(completionDetails(detail.entries, detail.attemptStates).submissionStatus, "submitted");
+  assert.equal(completionDetails([], detail.attemptStates).submissionStatus, "attempt_finished");
+  const { filesForActivity } = await import("../lms-agent/src/browser/files.js");
+  await page.route("https://ucasaslms.org/**", route => route.fulfill({ contentType: "text/html", body: '<main id="region-main"><div id="intro"><a href="https://ucasaslms.org/pluginfile.php/12/mod_assign/intro/sheet.pdf?token=private">Homework sheet</a><a href="https://evil.test/pluginfile.php/12/a.pdf">External</a></div></main>' }));
+  const files = await filesForActivity(page, { id: "22", type: "assign", url: "https://ucasaslms.org/mod/assign/view.php?id=22" });
+  assert.equal(files.length, 1); assert.equal(files[0].title, "Homework sheet"); assert.ok(!files[0].url.includes("private"));
+  console.log("Coursework browser fixtures passed: deadlines, quiz windows, submission and attempt evidence, homework attachment discovery, and source sanitization.");
 } finally { await browser.close(); }

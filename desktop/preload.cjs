@@ -4,6 +4,11 @@ contextBridge.exposeInMainWorld(
   "study",
   Object.freeze({
     snapshot: () => ipcRenderer.invoke("study:snapshot"),
+    saveMemory: (content, revision) => ipcRenderer.invoke("study:memory-save", content, revision),
+    revealMemory: () => ipcRenderer.invoke("study:memory-reveal"),
+    savePage: input => ipcRenderer.invoke("study:page-save", input),
+    deletePage: (id, revision) => ipcRenderer.invoke("study:page-delete", id, revision),
+    revealDownload: id => ipcRenderer.invoke("study:download-reveal", id),
     saveSettings: (input) => ipcRenderer.invoke("study:settings", input),
     aiStatus: () => ipcRenderer.invoke("study:ai-status"),
     connectAi: (input) => ipcRenderer.invoke("study:ai-connect", input),

@@ -12,6 +12,10 @@ process.parentPort.once("message", async ({ data }) => {
         "../lms-agent/src/browser/coursework.js"
       );
       result = await listCoursework(data.courseId, data.timeZone);
+    } else if (data.operation === "files" || data.operation === "download") {
+      const { listCourseFiles, downloadCourseFile } = await import("../lms-agent/src/browser/files.js");
+      result = data.operation === "files" ? await listCourseFiles(data.courseId.courseId, data.courseId.activityId)
+        : await downloadCourseFile(data.courseId.courseId, data.courseId.activityId, data.courseId.fileId);
     } else throw new Error("Unsupported Moodle operation.");
     process.parentPort.postMessage({ ok: true, result });
   } catch (error) {

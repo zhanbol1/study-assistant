@@ -12,7 +12,36 @@ try {
   page.on("pageerror", error => errors.push(error.message));
   await page.goto("http://127.0.0.1:4173");
   await page.getByLabel("Message", { exact: true }).waitFor();
-  assert.equal(await page.locator("aside, nav").count(), 0);
+  assert.equal(await page.getByRole("navigation", { name: "Workspace", exact: true }).count(), 1);
+  const sidebar = page.getByRole("navigation", { name: "Workspace", exact: true });
+  await sidebar.getByRole("button", { name: "Memory", exact: true }).click();
+  await page.getByLabel("Memory instructions", { exact: true }).fill("Check tutorial sheets first. Never treat an expired deadline as done.");
+  await sidebar.getByRole("button", { name: "Chat", exact: true }).click();
+  await page.getByRole("dialog", { name: "Unsaved edits" }).getByRole("button", { name: "Keep editing" }).click();
+  assert.match(await page.getByLabel("Memory instructions", { exact: true }).inputValue(), /tutorial sheets/);
+  await page.getByRole("button", { name: "Save memory", exact: true }).click();
+  await page.getByText("Memory saved. Your next message will use these instructions.", { exact: true }).waitFor();
+  await page.reload();
+  await sidebar.getByRole("button", { name: "Memory", exact: true }).click();
+  assert.match(await page.getByLabel("Memory instructions", { exact: true }).inputValue(), /tutorial sheets/);
+  await sidebar.getByRole("button", { name: "Create page", exact: true }).click();
+  await page.getByLabel("Page title", { exact: true }).fill("Homework plan");
+  await page.getByLabel("Page content", { exact: true }).fill("# Homework\n\nFinish the reading before Friday.\n\n| Task | State |\n| --- | --- |\n| Reading | Pending |");
+  await page.getByRole("button", { name: "Save page", exact: true }).click();
+  await sidebar.getByRole("button", { name: "Homework plan", exact: true }).click();
+  await page.getByText("Finish the reading before Friday.", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("columnheader", { name: "Task", exact: true }).count(), 1);
+  await page.reload();
+  await sidebar.getByRole("button", { name: "Homework plan", exact: true }).click();
+  await page.getByRole("button", { name: "Edit page", exact: true }).click();
+  await page.getByLabel("Page content", { exact: true }).fill("Edited plan");
+  await page.getByRole("button", { name: "Save page", exact: true }).click();
+  await page.getByText("Page saved.", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Delete page", exact: true }).click();
+  await page.getByRole("button", { name: "Delete permanently", exact: true }).click();
+  await sidebar.getByRole("button", { name: "Downloads", exact: true }).click();
+  await page.getByText(/No downloads yet/).waitFor();
+  await sidebar.getByRole("button", { name: "Chat", exact: true }).click();
   await page.getByRole("button", { name: "What is my homework?" }).click();
   assert.equal(await page.getByLabel("Message", { exact: true }).inputValue(), "What is my homework?");
   await page.getByLabel("Message", { exact: true }).press("Enter");
@@ -38,5 +67,5 @@ try {
     await page.locator(".connections > summary").click();
   }
   assert.deepEqual(errors, []);
-  console.log("UI checks passed: chat-only layout, prompt suggestions, inline connections, honest preview state, time-zone persistence and responsive layouts.");
+  console.log("UI checks passed: sidebar navigation, Memory editing/persistence, saved page CRUD, Downloads, chat, inline connections and responsive layouts.");
 } finally { await browser.close(); }

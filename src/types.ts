@@ -49,11 +49,17 @@ export interface Material { id: string; title: string; course: string; createdAt
 export interface Question { question: string; choices: string[]; answerIndex: number; explanation: string }
 export interface ChatMessage { id: string; role: "user" | "assistant"; content: string; sources: { id: string; title: string; reference: string; sourceUrl?: string; excerpt?: string }[]; questions: Question[]; createdAt: string }
 export interface Notice { id: string; title: string; body: string; read: boolean; createdAt: string }
+export interface PageSource { reference: string; title: string; sourceUrl?: string }
+export interface SavedPage { id: string; title: string; content: string; revision: string; sources: PageSource[]; updatedAt: string; createdAt: string }
+export interface DownloadedFile { id: string; filename: string; bytes: number; course: string; sourceUrl: string; createdAt: string }
 export interface AiStatus {
   configured: boolean; fromEnvironment?: boolean; apiKeyConfigured?: boolean; mode?: "api-key" | "chatgpt";
   chatgpt?: { signedIn: boolean; planEnabled: boolean; account?: string; model: string; models: { id: string; name: string }[]; pending?: boolean; error?: string; welcomeRequired?: boolean };
 }
 export interface Snapshot {
+  memory: { content: string; revision: string };
+  pages: SavedPage[];
+  downloads: DownloadedFile[];
   tasks: Task[];
   courses: Course[];
   routines: Routine[];
@@ -69,6 +75,11 @@ export type TaskInput = Pick<
 >;
 export type RoutineInput = Pick<Routine, "name" | "course" | "instructions" | "action" | "courseId">;
 export interface StudyApi {
+  saveMemory(content: string, revision: string): Promise<Snapshot>;
+  revealMemory(): Promise<void>;
+  savePage(input: { id?: string | null; revision?: string | null; title: string; content: string; sources?: PageSource[] }): Promise<Snapshot>;
+  deletePage(id: string, revision: string): Promise<Snapshot>;
+  revealDownload(id: string): Promise<void>;
   snapshot(): Promise<Snapshot>;
   saveSettings(input: Partial<Settings>): Promise<Snapshot>;
   aiStatus(): Promise<AiStatus>;

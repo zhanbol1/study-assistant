@@ -83,7 +83,17 @@ export function extractDetailDom() {
     entries.push({ label: strong.textContent, value: row.textContent.slice(strong.textContent.length).trim(),
       datetime: row.querySelector('time')?.getAttribute('datetime'), timestamp: row.querySelector('[data-timestamp]')?.getAttribute('data-timestamp') });
   }
-  return { entries, description: document.querySelector('#intro')?.textContent || '',
+  const attemptStates = [];
+  for (const table of document.querySelectorAll('.quizattemptsummary')) {
+    const rows = [...table.querySelectorAll('tr')];
+    const headers = [...(rows[0]?.querySelectorAll('th,td') || [])];
+    const column = headers.findIndex(cell => /^(state|status)$/i.test(cell.textContent.trim()));
+    if (column >= 0) for (const row of rows.slice(1)) {
+      const cell = row.querySelectorAll('th,td')[column];
+      if (cell) attemptStates.push(cell.textContent);
+    }
+  }
+  return { entries, attemptStates, description: document.querySelector('#intro')?.textContent || '',
     login: Boolean(document.querySelector('input[name="password"]')),
     content: Boolean(document.querySelector('#region-main')) };
 }

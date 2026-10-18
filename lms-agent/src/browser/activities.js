@@ -1,5 +1,3 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import { config } from '../config.js';
 import { cleanText, sanitizeUrl } from '../security/sanitize.js';
 import { withAuthenticatedPage } from './session.js';
@@ -23,40 +21,8 @@ export async function listActivities(courseId) {
 }
 
 export async function downloadActivity(courseId, activityId) {
-  validateNumeric(courseId, 'Course ID');
-  validateNumeric(activityId, 'Activity ID');
-  const courseUrl = courseUrlFor(courseId);
-
-  return withAuthenticatedPage(courseUrl, async (page, context) => {
-    await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {});
-    const activities = normalizeActivities(await extractActivities(page));
-    const activity = activities.find((item) => item.id === String(activityId));
-    if (!activity) throw new Error('Activity was not found inside the selected course.');
-    if (!['resource', 'folder'].includes(activity.type)) {
-      throw new Error(`Activity type '${activity.type}' is not a downloadable course resource.`);
-    }
-
-    const requestUrl = activity.type === 'folder'
-      ? folderDownloadUrl(activity.id)
-      : activity.url;
-    const response = await context.request.get(requestUrl, { timeout: 60_000 });
-    if (!response.ok()) throw new Error(`Resource download failed with HTTP ${response.status()}.`);
-    const body = await response.body();
-    if (body.byteLength > 100 * 1024 * 1024) throw new Error('Resource exceeds the 100 MB safety limit.');
-
-    const headers = response.headers();
-    const sourceFilename =
-      filenameFromDisposition(headers['content-disposition'])
-        || filenameFromUrl(response.url())
-        || `${activity.type}-${activity.id}${activity.type === 'folder' ? '.zip' : ''}`;
-    const filename = safeFilename(`${activity.id}-${sourceFilename}`);
-    const outputPath = path.join(config.downloadsDir, filename);
-    await fs.writeFile(outputPath, body);
-    return {
-      activity,
-      file: { path: outputPath, filename, bytes: body.byteLength, contentType: headers['content-type'] || '' },
-    };
-  });
+  const { downloadCourseFile } = await import('./files.js');
+  return downloadCourseFile(courseId, activityId, 'activity:' + activityId);
 }
 
 async function extractActivities(page) {
@@ -109,27 +75,5 @@ function validateNumeric(value, label) {
 function courseUrlFor(courseId) {
   const url = new URL('/course/view.php', config.baseUrl);
   url.searchParams.set('id', String(courseId));
-  return url.toString();
-}
-
-function filenameFromDisposition(value = '') {
-  const encoded = value.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
-  if (encoded) return decodeURIComponent(encoded);
-  return value.match(/filename="?([^";]+)"?/i)?.[1] || '';
-}
-
-function filenameFromUrl(value) {
-  try { return decodeURIComponent(new URL(value).pathname.split('/').pop() || ''); }
-  catch { return ''; }
-}
-
-function safeFilename(value) {
-  const cleaned = value.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim();
-  return cleaned.slice(0, 180) || 'downloaded-resource';
-}
-
-function folderDownloadUrl(activityId) {
-  const url = new URL('/mod/folder/download_folder.php', config.baseUrl);
-  url.searchParams.set('id', String(activityId));
   return url.toString();
 }

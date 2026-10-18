@@ -3,6 +3,7 @@ import { cleanText } from '../security/sanitize.js';
 import { withAuthenticatedPage } from './session.js';
 import { normalizeActivities } from './activities.js';
 import { deadlineDetails, extractDetailDom } from './deadlines.js';
+import { completionDetails } from './completion.js';
 
 export async function listCoursework(courseId, timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone) {
   if (!/^\d{1,15}$/.test(String(courseId))) throw new Error('Course ID must be numeric.');
@@ -28,7 +29,7 @@ export async function listCoursework(courseId, timeZone = Intl.DateTimeFormat().
         if (finalUrl.origin !== url.origin || finalUrl.pathname !== `/mod/${item.type}/view.php`) throw new Error('Unexpected destination.');
         const detail = await page.evaluate(extractDetailDom);
         if (detail.login || !detail.content) throw new Error('Coursework content unavailable.');
-        Object.assign(record, deadlineDetails(detail.entries, timeZone), { description: cleanText(detail.description).slice(0, 4000), detailsRead: true });
+        Object.assign(record, deadlineDetails(detail.entries, timeZone), completionDetails(detail.entries, detail.attemptStates), { description: cleanText(detail.description).slice(0, 4000), detailsRead: true });
       } catch {
         record.detailsRead = false;
         record.deadlineEvidence = 'Details could not be read. Check the source in Moodle.';

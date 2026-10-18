@@ -13,14 +13,24 @@ try {
   desktop = await _electron.launch({ executablePath: path.join(root, "node_modules/electron/dist", process.platform === "win32" ? "electron.exe" : "electron"), args: [root, "--smoke-test"], env, timeout: 20000 });
   const page = await desktop.firstWindow({ timeout: 15000 }); page.setDefaultTimeout(15000);
   await page.getByLabel("Message", { exact: true }).waitFor();
-  assert.equal(await page.locator("aside, nav").count(), 0);
+  assert.equal(await page.getByRole("navigation", { name: "Workspace", exact: true }).count(), 1);
   assert.equal(await page.evaluate(() => typeof window.require), "undefined");
   await page.evaluate(async () => {
     await window.study.disconnectAi(); await window.study.clearChat();
     await window.study.saveSettings({ aiMode: "api-key" });
+    for (const page of (await window.study.snapshot()).pages) await window.study.deletePage(page.id, page.revision);
     for (const doc of (await window.study.snapshot()).documents) await window.study.deleteDocument(doc.id);
   });
   await page.reload();
+  const sidebar = page.getByRole("navigation", { name: "Workspace", exact: true });
+  await sidebar.getByRole("button", { name: "Memory", exact: true }).click();
+  await page.getByLabel("Memory instructions", { exact: true }).fill("Use my course tutorial sheets. Never infer completion from a deadline.");
+  await page.getByRole("button", { name: "Save memory", exact: true }).click();
+  await page.getByText("Memory saved. Your next message will use these instructions.", { exact: true }).waitFor();
+  const memoryDirectory = await desktop.evaluate(({ app }) => app.getPath("userData"));
+  const memoryFile = await fs.readFile(path.join(memoryDirectory, "memory.md"), "utf8");
+  assert.match(memoryFile, /tutorial sheets/);
+  await sidebar.getByRole("button", { name: "Chat", exact: true }).click();
   await page.getByRole("button", { name: "What is my homework?" }).click();
   await page.getByRole("button", { name: "Send message", exact: true }).click();
   await page.getByRole("alert").filter({ hasText: "Connect ChatGPT" }).waitFor();
@@ -53,6 +63,24 @@ try {
   assert.equal(requests[0].tools[0].name, "list_courses");
   await page.reload();
   await page.locator(".message-text").filter({ hasText: "The derivative of x squared is twice x." }).waitFor();
+  await desktop.evaluate(() => {
+    let round = 0;
+    globalThis.fetch = async (_url, init) => {
+      const body = JSON.parse(init.body);
+      if (!body.instructions.includes("tutorial sheets")) throw Error("Saved Memory missing from request");
+      const output = round++ === 0 ? [{ type: "function_call", name: "save_page", call_id: "save_fixture", arguments: JSON.stringify({ id: null, revision: null, title: "AI Homework", content: "Saved by the assistant [S1].", source_ids: ["S1"] }) }] : [{ type: "message", content: [{ type: "output_text", text: JSON.stringify({ answer: "Your Homework page is saved.", sourceIds: ["S1"], questions: [] }) }] }];
+      return new Response(JSON.stringify({ status: "completed", output }));
+    };
+  });
+  await page.locator(".attachment-menu > summary").click();
+  await page.getByRole("checkbox", { name: "Desktop lecture" }).check();
+  await page.locator(".attachment-menu > summary").click();
+  await page.getByLabel("Message", { exact: true }).fill("Create and save my Homework sidebar page.");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await page.getByText("Your Homework page is saved.", { exact: true }).waitFor();
+  await sidebar.getByRole("button", { name: "AI Homework", exact: true }).click();
+  await page.getByText("Saved by the assistant [S1].", { exact: true }).waitFor();
+  await sidebar.getByRole("button", { name: "Chat", exact: true }).click();
   // Exercise the real OAuth listener and JOSE validation with an isolated test issuer transport.
   const keys = await generateKeyPair("RS256");
   const jwk = { ...await exportJWK(keys.publicKey), kid: "desktop-fixture", alg: "RS256", use: "sig" };
@@ -118,5 +146,5 @@ try {
   assert.equal((await page.evaluate(() => window.study.aiStatus())).configured, false, "Signing out never silently switches to the saved API key");
 
   await page.evaluate(async () => { await window.study.saveSettings({ aiMode: "api-key" }); await window.study.clearChat(); await window.study.disconnectAi(); });
-  console.log("Desktop checks passed: single chat layout, inline connections, sandboxed IPC, encrypted key, selected materials, persistence, real OAuth callback/JWT verification, subscription model selection/SSE, and explicit billing. Providers mocked.");
+  console.log("Desktop checks passed: sidebar navigation, persistent memory.md, AI-created pages, sandboxed IPC, encrypted key, selected materials, real OAuth callback/JWT verification, subscription model selection/SSE and explicit billing. Providers mocked.");
 } finally { if (desktop) await desktop.close(); }

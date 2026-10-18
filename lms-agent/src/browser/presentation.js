@@ -133,7 +133,15 @@ export async function extractPptx(buffer) {
   try { return await extractPptxParts(buffer); }
   catch (error) { throw new PresentationReadError(error.message); }
 }
+const presentations = new Map();
 export async function readCourseSlides(courseId, activityId, fileId) {
   const result = await downloadCourseFile(courseId, activityId, fileId);
-  return { ...result, presentation: await extractPptx(await fs.readFile(result.file.path)) };
+  const key = `${result.file.path}:${result.file.sha256}`;
+  let presentation = presentations.get(key);
+  if (!presentation) {
+    presentation = await extractPptx(await fs.readFile(result.file.path));
+    if (presentations.size >= 8) presentations.delete(presentations.keys().next().value);
+    presentations.set(key, presentation);
+  }
+  return { ...result, presentation };
 }

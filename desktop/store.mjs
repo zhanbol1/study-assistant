@@ -83,6 +83,8 @@ export function createStore(filename) {
       return this.snapshot();
     },
     addDownload(input) {
+      const existing = all("download").find(file => file.path === input.path && file.sourceUrl === input.sourceUrl && file.bytes === input.bytes);
+      if (existing) { const { path: localPath, ...metadata } = existing; return metadata; }
       const download = { id: randomUUID(), filename: text(input.filename, "Filename", 250), path: text(input.path, "File path", 2000), bytes: input.bytes, course: text(input.course, "Course", 500), sourceUrl: moodleUrl(input.sourceUrl), createdAt: new Date().toISOString() };
       if (!Number.isSafeInteger(download.bytes) || download.bytes < 0 || download.bytes > 100 * 1024 * 1024) throw new Error("Invalid downloaded file size.");
       save(download.id, "download", download);

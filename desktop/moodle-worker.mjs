@@ -1,6 +1,16 @@
 import { safeMoodleError } from "../lms-agent/src/browser/errors.js";
 // Runs outside the renderer and main process. Credentials never enter UI messages.
-process.parentPort.once("message", async ({ data }) => {
+let busy = false;
+let stopping = false;
+process.parentPort.on("message", async ({ data }) => {
+  if (data.operation === "shutdown") {
+    stopping = true;
+    const { closeMoodleSession } = await import("../lms-agent/src/browser/session.js");
+    await closeMoodleSession();
+    process.exit(0);
+  }
+  if (busy || stopping) return;
+  busy = true;
   try {
     let result;
     if (data.operation === "courses") {
@@ -21,9 +31,11 @@ process.parentPort.once("message", async ({ data }) => {
       const { readCourseSlides } = await import("../lms-agent/src/browser/presentation.js");
       result = await readCourseSlides(data.courseId.courseId, data.courseId.activityId, data.courseId.fileId);
     } else throw new Error("Unsupported Moodle operation.");
-    process.parentPort.postMessage({ ok: true, result });
+    process.parentPort.postMessage({ id: data.id, ok: true, result });
   } catch (error) {
     const failure = safeMoodleError(error);
-    process.parentPort.postMessage({ ok: false, error: failure.message, errorCode: failure.code, retryable: failure.retryable });
+    process.parentPort.postMessage({ id: data.id, ok: false, error: failure.message, errorCode: failure.code, retryable: failure.retryable });
+  } finally {
+    busy = false;
   }
 });

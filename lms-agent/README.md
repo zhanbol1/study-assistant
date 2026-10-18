@@ -52,7 +52,7 @@ $env:PLAYWRIGHT_BROWSERS_PATH = "$PWD\.playwright-browsers"
 npm.cmd run courses
 ```
 
-Discovery is not a prerequisite for course listing. Each browser operation starts a fresh browser session and authenticates as needed; login sessions are not persisted between commands. Course listing reads the rendered overview without navigating pagination or changing filters, so it may not include every enrolled course.
+Discovery is not a prerequisite for course listing. Standalone commands start fresh browser sessions; login sessions are not persisted between commands. The desktop worker enables in-memory session reuse with `LMS_REUSE_SESSION=true` and closes it after ten idle minutes, cancellation, failure or app exit. Changed credentials invalidate the shared browser. Course listing reads the rendered overview without navigating pagination or changing filters, so it may not include every enrolled course.
 
 ## Remove stored credentials
 

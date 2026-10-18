@@ -19,6 +19,7 @@ import { settingsInput } from "./validation.mjs";
 import { createKeyVault, createAssistant, searchDocuments } from "./ai.mjs";
 import { createChatGptAuth } from "./chatgpt-auth.mjs";
 import { managedDownload } from "./downloads.mjs";
+import { createMoodleClient } from "./moodle-client.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const devUrl = process.env.STUDY_DEV_URL;
@@ -32,86 +33,33 @@ let assistant;
 let vault;
 let chatgpt;
 let chatgptError = "";
-const workers = new Set();
+const moodleClient = createMoodleClient({
+  spawn: background => utilityProcess.fork(path.join(root, "desktop/moodle-worker.mjs"), [], {
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      OPENAI_API_KEY: "",
+      LMS_HEADLESS: background ? "true" : "false",
+      LMS_REUSE_SESSION: "true",
+      PLAYWRIGHT_BROWSERS_PATH: path.join(root, "lms-agent/.playwright-browsers"),
+      LMS_DATA_DIR: path.join(app.getPath("userData"), "moodle"),
+    },
+  }),
+});
 
 async function readMoodle(operation, courseId, background = false, signal) {
   signal?.throwIfAborted();
   if (syncing) throw new Error("A Moodle sync is already running.");
-  if (process.platform !== "win32")
-    throw new Error(
-      "Moodle credential storage currently requires Windows. Chat remains available on this platform.",
-    );
+  if (process.platform !== "win32") throw new Error("Moodle credential storage currently requires Windows. Chat remains available on this platform.");
   syncing = true;
   try {
-    return await new Promise((resolve, reject) => {
-      const child = utilityProcess.fork(
-        path.join(root, "desktop/moodle-worker.mjs"),
-        [],
-        {
-          stdio: "ignore",
-          env: {
-            ...process.env,
-            OPENAI_API_KEY: "",
-            LMS_HEADLESS: background ? "true" : "false",
-            PLAYWRIGHT_BROWSERS_PATH: path.join(
-              root,
-              "lms-agent/.playwright-browsers",
-            ),
-            LMS_DATA_DIR: path.join(app.getPath("userData"), "moodle"),
-          },
-        },
-      );
-      workers.add(child);
-      let finished = false;
-      const timer = setTimeout(
-        () =>
-          finish(
-            new Error("Moodle sync timed out. Your saved data is unchanged."),
-          ),
-        600_000,
-      );
-      function finish(error, value) {
-        if (finished) return;
-        finished = true;
-        clearTimeout(timer);
-        signal?.removeEventListener("abort", abort);
-        workers.delete(child);
-        child.kill();
-        if (error) reject(error);
-        else resolve(value);
-      }
-      const abort = () => finish(new Error("Moodle lookup stopped."));
-      signal?.addEventListener("abort", abort, { once: true });
-      if (signal?.aborted) abort();
-      child.on("spawn", () => child.postMessage({ operation, courseId, timeZone: store.snapshot().settings.timeZone }));
-      child.on("error", () => finish(new Error("Moodle worker could not start.")));
-      child.on("message", (message) => {
-        if (message?.ok === true) {
-          try {
-            if (["download", "read-slides"].includes(operation)) managedDownload(message.result?.file?.path, path.join(app.getPath("userData"), "moodle/downloads"));
-            finish(null, message.result);
-          } catch { finish(new Error("The downloaded file could not be verified.")); }
-        }
-        else
-          finish(
-            Object.assign(new Error(
-              typeof message?.error === "string"
-                ? message.error
-                : "Moodle sync failed.",
-            ), { code: message?.errorCode || "read-failed", retryable: message?.retryable === true }),
-          );
-      });
-      child.on("exit", () =>
-        finish(
-          new Error(
-            "Moodle worker stopped before completing. Your saved data is unchanged.",
-          ),
-        ),
-      );
-    });
-  } finally {
-    syncing = false;
-  }
+    const result = await moodleClient.read({ operation, courseId, timeZone: store.snapshot().settings.timeZone }, { background, signal });
+    if (["download", "read-slides"].includes(operation)) {
+      try { managedDownload(result?.file?.path, path.join(app.getPath("userData"), "moodle/downloads")); }
+      catch { throw new Error("The downloaded file could not be verified."); }
+    }
+    return result;
+  } finally { syncing = false; }
 }
 
 function broadcast() {
@@ -287,9 +235,15 @@ app.on("activate", () => {
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
-app.on("before-quit", () => {
+let closingMoodle = false;
+let moodleClosed = false;
+app.on("before-quit", event => {
+  if (moodleClosed) return;
+  event.preventDefault();
+  if (closingMoodle) return;
+  closingMoodle = true;
   chatgpt?.cancelSignIn();
   assistant?.cancel();
-  for (const child of workers) child.kill();
+  void moodleClient.close().finally(() => { moodleClosed = true; app.quit(); });
 });
 app.on("will-quit", () => store?.close());

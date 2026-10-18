@@ -3,10 +3,23 @@ import { chromium } from 'playwright';
 import { config } from '../config.js';
 import { ensureAuthenticated } from './login.js';
 import { MoodleError } from './errors.js';
+import { createReusableSession } from './reusable-session.js';
+import { getLmsCredential } from '../security/credential-store.js';
+
+const shared = createReusableSession({
+  launch: () => chromium.launch({ headless: config.headless }),
+  getCredential: getLmsCredential,
+  authenticate: (page, destination, options) => {
+    page.setDefaultTimeout(config.timeoutMs);
+    return ensureAuthenticated(page, destination, options);
+  },
+});
+export const closeMoodleSession = () => shared.close();
 
 export async function withAuthenticatedPage(destinationUrl, operation) {
   await fs.mkdir(config.artifactsDir, { recursive: true });
   await fs.mkdir(config.downloadsDir, { recursive: true });
+  if (process.env.LMS_REUSE_SESSION === 'true') return shared.run(destinationUrl, operation);
 
   const browser = await chromium.launch({ headless: config.headless });
   try {

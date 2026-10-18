@@ -8,11 +8,11 @@ import { normalizeActivities } from './activities.js';
 import { openMoodlePage } from './navigation.js';
 import { MoodleError } from './errors.js';
 
-export async function requestMoodleFile(context, url, { timeout = 60000 } = {}) {
+export async function requestMoodleFile(context, url, { timeout = 60000, headers = {} } = {}) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       // PPTX/ZIP files are already compressed. Avoid unnecessary HTTP compression.
-      return await context.request.get(url, { timeout, maxRedirects: 0, headers: { 'Accept-Encoding': 'identity' } });
+      return await context.request.get(url, { timeout, maxRedirects: 0, headers: { ...headers, 'Accept-Encoding': 'identity' } });
     } catch (error) {
       const timedOut = /timeout|timed out/i.test(error.message || '');
       const transient = timedOut || /ECONNRESET|net::ERR_(?:CONNECTION_RESET|CONNECTION_CLOSED)/.test(error.message || '');
@@ -83,6 +83,17 @@ function responseFilename(headers, url) {
   if (name) return name;
   try { return decodeURIComponent(new URL(url).pathname.split('/').pop()) || 'resource'; } catch { return 'resource'; }
 }
+const downloadCaches = new WeakMap();
+async function validatedCache(context, key) {
+  const entry = downloadCaches.get(context)?.get(key);
+  if (!entry) return;
+  try {
+    const stat = await fs.lstat(entry.file.path);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size !== entry.file.bytes) return;
+    if (createHash('sha256').update(await fs.readFile(entry.file.path)).digest('hex') !== entry.file.sha256) return;
+    return entry;
+  } catch { return; }
+}
 export async function downloadCourseFile(courseId, activityId, fileId) {
   numeric(courseId); numeric(activityId);
   return withAuthenticatedPage(courseUrl(courseId), async (page, context) => {
@@ -91,29 +102,47 @@ export async function downloadCourseFile(courseId, activityId, fileId) {
     const available = fileId === `activity:${activity.id}` && ['resource', 'folder'].includes(activity.type) ? [resourceFile(activity)] : await filesForActivity(page, activity);
     const file = available.find(file => file.id === fileId);
     if (!file) throw new Error('File is no longer available in this activity. List files again.');
-    let requestUrl = file.type === 'folder' ? new URL(`/mod/folder/download_folder.php?id=${activity.id}`, config.baseUrl).href : file.url || activity.url;
-    let response;
-    for (let redirect = 0; redirect <= 5; redirect++) {
-      const url = new URL(requestUrl);
-      if (url.origin !== new URL(config.baseUrl).origin || url.username || url.password) throw new Error('External file downloads are not supported. Open this resource in Moodle.');
-      response = await requestMoodleFile(context, url.href);
-      if (![301, 302, 303, 307, 308].includes(response.status())) break;
-      const location = response.headers().location;
-      await response.dispose(); response = null;
-      if (!location || redirect === 5) throw new Error('Resource redirect could not be followed.');
-      requestUrl = new URL(location, url).href;
-    }
-    if (!response?.ok()) { await response?.dispose(); throw new Error('Resource download failed.'); }
-    try {
-      const headers = response.headers();
-      if (/text\/html/i.test(headers['content-type'] || '') && !headers['content-disposition']) throw new Error('Moodle returned a page instead of a file. Login or access may need attention.');
-      if (Number(headers['content-length']) > 100 * 1024 * 1024) throw new Error('Resource exceeds the 100 MB limit.');
-      const body = await response.body();
-      if (body.byteLength > 100 * 1024 * 1024) throw new Error('Resource exceeds the 100 MB limit.');
-      const filename = safeDownloadName(responseFilename(headers, response.url()), activity.id);
-      const outputPath = path.join(config.downloadsDir, filename);
-      await fs.writeFile(outputPath, body, { flag: 'wx' });
-      return { activity, file: { path: outputPath, filename, bytes: body.byteLength, contentType: headers['content-type'] || '' } };
-    } finally { await response.dispose(); }
+    return downloadValidatedFile(context, courseId, activity, file);
   });
+}
+
+// Called after fresh course/activity membership validation.
+export async function downloadValidatedFile(context, courseId, activity, file, downloadsDir = config.downloadsDir) {
+  let requestUrl = file.type === 'folder' ? new URL(`/mod/folder/download_folder.php?id=${activity.id}`, config.baseUrl).href : file.url || activity.url;
+  const cacheKey = `${courseId}:${activity.id}:${file.id}`;
+  const cached = await validatedCache(context, cacheKey);
+  let response;
+  for (let redirect = 0; redirect <= 5; redirect++) {
+    const url = new URL(requestUrl);
+    if (url.origin !== new URL(config.baseUrl).origin || url.username || url.password) throw new Error('External file downloads are not supported. Open this resource in Moodle.');
+    // Only send a validator to the exact final URL that originally supplied it.
+    const headers = cached?.url === url.href ? cached.etag ? { 'If-None-Match': cached.etag } : cached.modified ? { 'If-Modified-Since': cached.modified } : {} : {};
+    response = await requestMoodleFile(context, url.href, { headers });
+    if (response.status() === 304 && cached && Object.keys(headers).length) {
+      await response.dispose();
+      return { activity, file: { ...cached.file }, reused: true };
+    }
+    if (![301, 302, 303, 307, 308].includes(response.status())) break;
+    const location = response.headers().location;
+    await response.dispose(); response = null;
+    if (!location || redirect === 5) throw new Error('Resource redirect could not be followed.');
+    requestUrl = new URL(location, url).href;
+  }
+  if (!response?.ok()) { await response?.dispose(); throw new Error('Resource download failed.'); }
+  try {
+    const headers = response.headers();
+    if (/text\/html/i.test(headers['content-type'] || '') && !headers['content-disposition']) throw new Error('Moodle returned a page instead of a file. Login or access may need attention.');
+    if (Number(headers['content-length']) > 100 * 1024 * 1024) throw new Error('Resource exceeds the 100 MB limit.');
+    const body = await response.body();
+    if (body.byteLength > 100 * 1024 * 1024) throw new Error('Resource exceeds the 100 MB limit.');
+    const filename = safeDownloadName(responseFilename(headers, response.url()), activity.id);
+    const outputPath = path.join(downloadsDir, filename);
+    await fs.writeFile(outputPath, body, { flag: 'wx' });
+    const saved = { path: outputPath, filename, bytes: body.byteLength, contentType: headers['content-type'] || '', sha256: createHash('sha256').update(body).digest('hex') };
+    let cache = downloadCaches.get(context);
+    if (!cache) { cache = new Map(); downloadCaches.set(context, cache); }
+    if (cache.size >= 64) cache.delete(cache.keys().next().value);
+    cache.set(cacheKey, { file: saved, url: response.url(), etag: headers.etag, modified: headers['last-modified'] });
+    return { activity, file: saved, reused: false };
+  } finally { await response.dispose(); }
 }

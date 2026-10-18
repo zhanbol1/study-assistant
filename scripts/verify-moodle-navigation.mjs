@@ -11,9 +11,10 @@ const { openMoodlePage } = await import("../lms-agent/src/browser/navigation.js"
 const { readCoursesFromPage } = await import("../lms-agent/src/browser/courses.js");
 const { safeMoodleError } = await import("../lms-agent/src/browser/errors.js");
 const { requestMoodleFile } = await import("../lms-agent/src/browser/files.js");
+const { createReusableSession } = await import("../lms-agent/src/browser/reusable-session.js");
 const browser = await chromium.launch({ headless: true });
 const form = '<main id="region-main"><form action="/login/index.php" method="post"><input name="username"><input name="password" type="password"><button type="submit">Log in</button></form></main>';
-let mode = 'normal', signedIn = false, overviewRequests = 0, downloadRequests = 0;
+let mode = 'normal', signedIn = false, overviewRequests = 0, downloadRequests = 0, loginPosts = 0;
 const external = http.createServer((_request,response)=>{response.setHeader('Content-Type','text/html');response.end(form)});
 await new Promise(resolve=>external.listen(0,'127.0.0.1',resolve));
 const server = http.createServer((request,response)=>{
@@ -30,11 +31,11 @@ const server = http.createServer((request,response)=>{
   if (mode === 'external') {response.writeHead(303,{location:'http://127.0.0.1:'+external.address().port+'/login'});response.end();return;}
   if (mode === 'delayed') {response.end(`<main id="region-main"><div class="block_myoverview"><div data-region="course-content"><div data-region="empty-message" hidden>No courses</div></div></div></main><script>setTimeout(()=>document.querySelector("[data-region=course-content]").insertAdjacentHTML("beforeend",'<a href="https://ucasaslms.org/course/view.php?id=11">Late-loaded course</a>'),250)</script>`);return;}
   if (url.pathname === '/login/index.php') {
-    if(request.method === 'POST' && mode !== 'reject') {signedIn=true;response.writeHead(303,{location:'/my/courses.php'});response.end();return;}
+    if(request.method === 'POST' && mode !== 'reject') {loginPosts++;signedIn=true;response.writeHead(303,{location:'/my/courses.php','Set-Cookie':'fixture-session=ok; HttpOnly; SameSite=Lax; Path=/'});response.end();return;}
     response.end(form+(request.method === 'POST'?'<div id="loginerrormessage">Invalid login</div>':''));return;
   }
   overviewRequests++;
-  if(!signedIn) {response.writeHead(303,{location:'/login/index.php'});response.end();return;}
+  if(mode === 'reuse' ? !request.headers.cookie?.includes('fixture-session=ok') : !signedIn) {response.writeHead(303,{location:'/login/index.php'});response.end();return;}
   response.end('<main id="region-main"><div class="block_myoverview"><div data-region="course-content"><a href="https://ucasaslms.org/course/view.php?id=10">Discrete Mathematics</a></div></div></main><img src="/slow-image.png">');
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -66,7 +67,20 @@ try {
    await assert.rejects(requestMoodleFile(downloadContext,fileUrl,{timeout:200}),error=>error.code==='download-timeout'&&!error.message.includes('Call log'));
    assert.equal(downloadRequests,2,'Stop after the second failed transfer');
  } finally { await downloadContext.close(); }
- console.log('Moodle navigation fixtures passed: stalled resources, redirects, rejected login, delayed courses, HTTP errors and external sign-in boundaries.');
+ mode='reuse';loginPosts=0;let launches=0,password='fixture-one';
+ const reusable=createReusableSession({launch:async()=>{launches++;return chromium.launch({headless:true})},getCredential:async()=>({username:'fixture',password}),authenticate:(...args)=>ensureAuthenticated(...args)});
+ try {
+   await reusable.run(destination,async()=>{});
+   await reusable.run(destination,async(_page,context)=>{assert.ok((await context.cookies()).some(cookie=>cookie.name==='fixture-session'));await context.clearCookies()});
+   assert.equal(loginPosts,1,'Consecutive reads must not log in twice');
+   await reusable.run(destination,async()=>{});
+   assert.equal(loginPosts,2,'An expired session must authenticate again');
+   assert.equal(launches,1,'Reuse the same browser after expiry');
+   password='fixture-two';await reusable.run(destination,async()=>{});
+   assert.equal(launches,2,'Changed credentials must start a new browser');
+   assert.equal(loginPosts,3);
+ } finally {await reusable.close()}
+ console.log('Moodle navigation fixtures passed: session reuse, expiry, changed credentials, stalled resources, download retries, redirects, delayed courses and sign-in boundaries.');
 } finally {
  await browser.close();server.closeAllConnections();external.closeAllConnections();
  await Promise.all([new Promise(resolve=>server.close(resolve)),new Promise(resolve=>external.close(resolve))]);

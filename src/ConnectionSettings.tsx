@@ -67,7 +67,7 @@ export function ConnectionSettings({ state, onUpdate }: { state: Snapshot; onUpd
       <p>Connect your OpenAI API account. Selected materials and chat history are sent only when you send a message or request a quiz. API billing is separate from a ChatGPT subscription.</p>
       <form onSubmit={event => {
         event.preventDefault(); const form = event.currentTarget; const data = new FormData(form);
-        void act(() => api.connectAi({ key: String(data.get("key") || "").trim(), model: String(data.get("model") || "").trim() }), "Connection settings saved. Send a message in Assistant to verify access.").then(ok => { if (ok) { const key = form.elements.namedItem("key") as HTMLInputElement; key.value = ""; } });
+        void act(() => api.connectAi({ key: String(data.get("key") || "").trim(), model: String(data.get("model") || "").trim() }), "Connection settings saved. Send a message in chat to verify access.").then(ok => { if (ok) { const key = form.elements.namedItem("key") as HTMLInputElement; key.value = ""; } });
       }}>
         <label className="field">API key<input name="key" type="password" autoComplete="off" maxLength={500} required={!status.apiKeyConfigured} placeholder={status.apiKeyConfigured ? "Leave blank to keep the current key" : "Enter your OpenAI API key"} disabled={isPreview} /></label>
         <label className="field">Model ID<input key={state.settings.model} name="model" defaultValue={state.settings.model} required maxLength={100} /></label>
@@ -76,18 +76,16 @@ export function ConnectionSettings({ state, onUpdate }: { state: Snapshot; onUpd
       </form>
     </section>
     <section className="panel feature-settings">
-      <h2>Deadlines and reminders</h2>
+      <h2>Moodle</h2>
+      <p>Ask about your homework, quizzes or exams. The assistant checks Moodle automatically using credentials stored in Windows Credential Manager.</p>
+      <p className="small-note">To connect or update Moodle, run <code>npm --prefix lms-agent run credentials:set</code> in the project terminal. Enter credentials only in that local prompt.</p>
       <form onSubmit={event => {
         event.preventDefault(); const data = new FormData(event.currentTarget);
-        void act(() => api.saveSettings({ timeZone: String(data.get("timeZone") || ""), remindersEnabled: data.has("remindersEnabled"), reminderMinutes: Number(data.get("reminderMinutes")), backgroundEnabled: data.has("backgroundEnabled") }), "Reminder settings saved.");
+        void act(() => api.saveSettings({ timeZone: String(data.get("timeZone") || "") }), "Moodle time zone saved.");
       }}>
         <label className="field">Moodle display time zone<input key={state.settings.timeZone} name="timeZone" defaultValue={state.settings.timeZone} required placeholder="Asia/Bishkek" maxLength={100} /></label>
-        <p className="small-note">Match the time zone in your Moodle profile. This is used for dates shown without a UTC offset. Imported deadlines are displayed in your device’s local time.</p>
-        <label className="check-field"><input name="remindersEnabled" type="checkbox" defaultChecked={state.settings.remindersEnabled} disabled={isPreview} />Remind me about approaching deadlines</label>
-        <label className="field">Remind me this many minutes before the deadline<input name="reminderMinutes" type="number" min={1} max={10080} defaultValue={state.settings.reminderMinutes} required /></label>
-        <label className="check-field"><input name="backgroundEnabled" type="checkbox" defaultChecked={state.settings.backgroundEnabled} disabled={isPreview} />Keep running in the system tray when I close the window</label>
-        <p>Scheduled routines and reminders run while the app is open or in the tray. Quit from the tray menu to stop them. Missed routines run once when the app resumes. This development build does not start at Windows login.</p>
-        <button className="button primary" disabled={busy}>Save reminder settings</button>
+        <p className="small-note">Match your Moodle profile so deadlines without a UTC offset are interpreted correctly. Only visible courses and activities can be checked.</p>
+        <button className="button secondary" disabled={busy}>Save time zone</button>
       </form>
     </section>
   </>;

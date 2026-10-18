@@ -10,11 +10,13 @@ export async function readResponseStream(response) {
   function streamedItem(value) {
     const index = Number.isInteger(value.output_index) && value.output_index >= 0 ? value.output_index : 0;
     if (index > 1000 || items.size > 1000) throw new Error("ChatGPT returned too many response items.");
-    if (!items.has(index)) items.set(index, { type: "message", role: "assistant", content: [] });
+    if (!items.has(index)) items.set(index, {});
     return items.get(index);
   }
   function partFor(value, type) {
     const item = streamedItem(value);
+    item.type ||= "message";
+    item.role ||= "assistant";
     const index = Number.isInteger(value.content_index) && value.content_index >= 0 ? value.content_index : 0;
     if (index > 1000) throw new Error("ChatGPT returned too many response parts.");
     item.content ||= [];
@@ -42,6 +44,10 @@ export async function readResponseStream(response) {
     if (value.type === "response.output_text.done" && typeof value.text === "string") partFor(value, "output_text").text = value.text;
     if (value.type === "response.refusal.delta" && typeof value.delta === "string") partFor(value, "refusal").refusal += value.delta;
     if (value.type === "response.refusal.done" && typeof value.refusal === "string") partFor(value, "refusal").refusal = value.refusal;
+    if (value.type === "response.function_call_arguments.delta" && typeof value.delta === "string") {
+      const item = streamedItem(value); item.arguments = (item.arguments || "") + value.delta;
+    }
+    if (value.type === "response.function_call_arguments.done" && typeof value.arguments === "string") streamedItem(value).arguments = value.arguments;
     if (value.type === "response.completed") complete = value.response;
   }
   try {
@@ -59,9 +65,17 @@ export async function readResponseStream(response) {
     throw error;
   }
   if (complete?.status !== "completed") throw new Error("ChatGPT stopped before completing the answer. No partial response was saved.");
-  const hasAnswer = (complete.output || []).some(item => (!item.type || item.type === "message") && (!item.role || item.role === "assistant") && item.phase !== "commentary" && item.content?.some(part => (part.type === "output_text" && part.text) || part.type === "refusal"));
   // Subscription streams can omit output from the terminal response. Retain
   // their streamed message items, but only after a successful completion event.
-  if (!hasAnswer && items.size) return { ...complete, output: [...items.entries()].sort(([a], [b]) => a - b).map(([, item]) => item) };
-  return complete;
+  const recovered = [...items.entries()].sort(([a], [b]) => a - b).map(([, item]) => {
+    if (item.type !== "message") { delete item.content; delete item.role; }
+    return item;
+  });
+  const output = [...(complete.output || [])];
+  for (const [index, item] of recovered.entries()) {
+    const match = item.id ? output.findIndex(other => other.id === item.id) : output[index]?.type === item.type ? index : -1;
+    if (match < 0) output.push(item);
+    else if (item.type === "message" && !output[match].content?.length) output[match] = item;
+  }
+  return { ...complete, output };
 }

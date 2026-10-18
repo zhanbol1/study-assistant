@@ -23,9 +23,9 @@ process.parentPort.once("message", async ({ data }) => {
       : /Executable doesn't exist|Cannot find package|Cannot find module/.test(
             message,
           )
-        ? "Moodle dependencies or Chromium are missing. Complete the setup commands in Settings."
+        ? "Moodle dependencies or Chromium are missing. Run npm run lms:install and npm run lms:browser in your project terminal."
         : /login|credential|MFA|SSO/i.test(message)
-          ? "Moodle login did not complete. Check stored credentials and finish any browser login steps."
+          ? "Moodle login did not complete. Update stored credentials using npm run credentials:set. SSO or MFA may require interactive login."
           : "Moodle could not be read. Check your connection and try again. Your saved data is unchanged.";
     process.parentPort.postMessage({ ok: false, error: safe });
   }

@@ -4,16 +4,7 @@ contextBridge.exposeInMainWorld(
   "study",
   Object.freeze({
     snapshot: () => ipcRenderer.invoke("study:snapshot"),
-    addTask: (input) => ipcRenderer.invoke("study:add-task", input),
-    updateTask: (id, input) => ipcRenderer.invoke("study:update-task", id, input),
-    toggleTask: (id) => ipcRenderer.invoke("study:toggle-task", id),
-    deleteTask: (id) => ipcRenderer.invoke("study:delete-task", id),
-    addRoutine: (input) => ipcRenderer.invoke("study:add-routine", input),
-    deleteRoutine: (id) => ipcRenderer.invoke("study:delete-routine", id),
-    setRoutineSchedule: (id, cadence) => ipcRenderer.invoke("study:routine-schedule", id, cadence),
-    runRoutine: (id) => ipcRenderer.invoke("study:run-routine", id),
     saveSettings: (input) => ipcRenderer.invoke("study:settings", input),
-    markNoticesRead: () => ipcRenderer.invoke("study:read-notices"),
     aiStatus: () => ipcRenderer.invoke("study:ai-status"),
     connectAi: (input) => ipcRenderer.invoke("study:ai-connect", input),
     disconnectAi: () => ipcRenderer.invoke("study:ai-disconnect"),
@@ -25,6 +16,12 @@ contextBridge.exposeInMainWorld(
     acknowledgeChatGptWelcome: () => ipcRenderer.invoke("study:chatgpt-welcome"),
     openChatGptUsage: () => ipcRenderer.invoke("study:chatgpt-usage"),
     sendMessage: (input) => ipcRenderer.invoke("study:ai-send", input),
+    cancelMessage: () => ipcRenderer.invoke("study:ai-cancel"),
+    onProgress: callback => {
+      const listener = (_event, value) => callback(value);
+      ipcRenderer.on("study:ai-progress", listener);
+      return () => ipcRenderer.removeListener("study:ai-progress", listener);
+    },
     clearChat: () => ipcRenderer.invoke("study:clear-chat"),
     addDocument: (input) => ipcRenderer.invoke("study:add-document", input),
     deleteDocument: (id) => ipcRenderer.invoke("study:delete-document", id),
@@ -40,8 +37,6 @@ contextBridge.exposeInMainWorld(
       ipcRenderer.on("study:open-settings", listener);
       return () => ipcRenderer.removeListener("study:open-settings", listener);
     },
-    syncCourses: () => ipcRenderer.invoke("study:sync-courses"),
-    syncAssignments: (id) => ipcRenderer.invoke("study:sync-assignments", id),
     openSource: (url) => ipcRenderer.invoke("study:open-source", url),
   }),
 );

@@ -1650,6 +1650,8 @@ nav {
 .quiz-correct { color: #33664e; }
 .quiz-incorrect { color: #9b554b; }
 .feature-settings h2 { margin: 0 0 14px; font-size: 18px; }
+.chatgpt-button { background: #171717; color: #fff; border: 1px solid #171717; border-radius: 999px; padding: 11px 22px; font-weight: 600; }
+.chatgpt-button:hover { background: #303030; }
 .feature-settings form { max-width: 620px; }
 .notice-list { max-height: 450px; overflow-y: auto; }
 .notice { border-left: 3px solid #aa91d7; padding: 12px; margin: 12px 0; background: #f8f6fc; overflow-wrap: anywhere; }

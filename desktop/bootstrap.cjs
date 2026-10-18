@@ -14,9 +14,13 @@ protocol.registerSchemesAsPrivileged([
 const smokeTest = process.argv.includes("--smoke-test");
 const ownsWorkspace = smokeTest || app.requestSingleInstanceLock();
 if (!ownsWorkspace) app.quit();
-app.on("second-instance", () => {
+app.on("second-instance", (_event, args) => {
   const existing = BrowserWindow.getAllWindows()[0];
   if (existing) { if (existing.isMinimized()) existing.restore(); existing.show(); existing.focus(); }
+  if (args.includes("--connect-chatgpt")) {
+    app.studyConnectRequested = true;
+    app.emit("study:connect-chatgpt");
+  }
 });
 if (smokeTest) {
   const data = path.resolve(__dirname, "../.runtime/desktop-smoke");

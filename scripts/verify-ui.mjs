@@ -105,6 +105,9 @@ try {
   }
   await page.setViewportSize({ width: 1360, height: 1000 });
   await page.screenshot({ path: path.join(root, ".runtime/assistant.png"), fullPage: true });
+  await page.getByRole("button", { name: "Settings & connections", exact: true }).click();
+  assert.equal(await page.getByRole("button", { name: "Continue with ChatGPT", exact: true }).isDisabled(), true, "Subscription sign-in requires the desktop app");
+  assert.equal(await page.getByLabel("API key", { exact: true }).isDisabled(), true, "Preview cannot store credentials");
   await page.getByRole("button", { name: "Overview", exact: true }).click();
   await fs.mkdir(path.join(root, ".runtime"), { recursive: true });
   await page.screenshot({

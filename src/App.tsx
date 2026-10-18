@@ -86,7 +86,7 @@ function localDateTime(value: string) {
 }
 
 export function App() {
-  const [page, setPage] = useState<Page>("Overview");
+  const [page, setPage] = useState<Page>(window.location.hash === "#connections" ? "Settings" : "Overview");
   const [state, setState] = useState<Snapshot>(empty);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
@@ -103,6 +103,7 @@ export function App() {
   useEffect(() => {
     return api.onSnapshot(setState);
   }, []);
+  useEffect(() => api.onOpenSettings(() => setPage("Settings")), []);
   useEffect(() => {
     let active = true;
     api

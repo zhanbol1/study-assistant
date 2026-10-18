@@ -1,6 +1,6 @@
 import type { Snapshot, StudyApi, Settings } from "./types";
 
-export const defaultSettings: Settings = { model: "gpt-4.1-mini", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, remindersEnabled: false, reminderMinutes: 60, backgroundEnabled: false };
+export const defaultSettings: Settings = { model: "gpt-4.1-mini", aiMode: "api-key", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, remindersEnabled: false, reminderMinutes: 60, backgroundEnabled: false };
 
 const previewKey = "study-assistant-preview-v1";
 function seed(): Snapshot {
@@ -127,6 +127,13 @@ const previewApi: StudyApi = {
   aiStatus: async () => ({ configured: false }),
   connectAi: async () => { throw new Error("Connect OpenAI in the desktop app. API keys are never stored in the browser preview."); },
   disconnectAi: async () => read(),
+  signInChatGpt: async () => { throw new Error("Continue with ChatGPT in the desktop app."); },
+  cancelChatGptSignIn: async () => read(),
+  signOutChatGpt: async () => ({ snapshot: read() }),
+  refreshChatGptModels: async () => read(),
+  selectChatGptModel: async () => read(),
+  acknowledgeChatGptWelcome: async () => read(),
+  openChatGptUsage: async () => { window.open("https://chatgpt.com/#settings/Usage", "_blank", "noopener,noreferrer"); },
   sendMessage: async () => { throw new Error("AI requests require the desktop app and an API connection."); },
   clearChat: () => update(state => { state.messages = []; }),
   addDocument: input => update(state => {
@@ -137,6 +144,7 @@ const previewApi: StudyApi = {
   searchDocuments: async query => read().documents.filter(doc => `${doc.title} ${doc.course} ${doc.content || ""}`.toLowerCase().includes(query.toLowerCase())).map(doc => ({ id: doc.id, title: doc.title, excerpt: (doc.content || "").slice(0, 400) })),
   importDocument: async () => { throw new Error("File import requires the desktop app. You can paste notes in this preview."); },
   onSnapshot: () => () => {},
+  onOpenSettings: () => () => {},
   syncCourses: unavailable,
   syncAssignments: unavailable,
   openSource: async (url) => {

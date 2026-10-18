@@ -22,6 +22,7 @@ import { numericId, moodleUrl } from "./validation.mjs";
 import { settingsInput } from "./validation.mjs";
 import { createKeyVault, createAssistant, searchDocuments } from "./ai.mjs";
 import { createScheduler } from "./scheduler.mjs";
+import { createChatGptAuth } from "./chatgpt-auth.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const devUrl = process.env.STUDY_DEV_URL;
@@ -33,10 +34,12 @@ let window;
 let syncing = false;
 let assistant;
 let vault;
+let chatgpt;
 let scheduler;
 let schedulerTimer;
 let tray;
 let quitting = false;
+let chatgptError = "";
 const workers = new Set();
 
 async function readMoodle(operation, courseId, background = false) {
@@ -119,6 +122,29 @@ async function showWorkspace() {
   window.focus();
 }
 
+async function connectChatGpt(options) {
+  chatgptError = "";
+  try {
+    const status = await chatgpt.signIn(options);
+    assistant.cancel();
+    store.saveSettings({ aiMode: "chatgpt" });
+    if (status.planEnabled) {
+      try { await chatgpt.listModels(); }
+      catch (error) { chatgptError = error.message; }
+    }
+    return store.snapshot();
+  } catch (error) { chatgptError = error.message; throw error; }
+  finally { broadcast(); }
+}
+
+function startChatGptSignIn() {
+  if (window) window.webContents.send("study:open-settings");
+  void connectChatGpt().then(() => console.log(chatgpt.status().planEnabled
+    ? "[study] ChatGPT plan authorization completed. Review the model selection in Settings."
+    : "[study] ChatGPT sign-in completed, but plan usage is not enabled. Review Settings."))
+    .catch(() => console.log("[study] ChatGPT sign-in did not complete. See Settings to retry."));
+}
+
 function updateBackground() {
   if (store.snapshot().settings.backgroundEnabled && !tray) {
     const pixels = Buffer.alloc(16 * 16 * 4);
@@ -195,7 +221,7 @@ async function createWindow() {
     }
   });
   if (devUrl) await window.loadURL(devUrl);
-  else await window.loadURL("study://app/index.html");
+  else await window.loadURL(`study://app/index.html${process.argv.includes("--connect-chatgpt") ? "#connections" : ""}`);
 }
 
 // Called by the synchronous bootstrap only after Electron is ready.
@@ -204,7 +230,9 @@ export async function start() {
   fs.mkdirSync(app.getPath("userData"), { recursive: true });
   store = createStore(path.join(app.getPath("userData"), "study.sqlite"));
   vault = createKeyVault(path.join(app.getPath("userData"), "openai-key.bin"), safeStorage);
-  assistant = createAssistant({ store, vault });
+  chatgpt = createChatGptAuth({ filename: path.join(app.getPath("userData"), "chatgpt-session.bin"), encryption: safeStorage, openBrowser: url => shell.openExternal(url), onChange: broadcast });
+  assistant = createAssistant({ store, vault, credentials: () => store.snapshot().settings.aiMode === "chatgpt"
+    ? chatgpt.credentials() : { key: vault.read(), model: store.snapshot().settings.model } });
   scheduler = createScheduler({ store, syncCourse: id => syncCourse(id, true), notify: (title, body) => {
     broadcast();
     if (!smokeTest && Notification.isSupported()) {
@@ -239,18 +267,40 @@ export async function start() {
     try { return await scheduler.runRoutine(id); } finally { broadcast(); }
   });
   handle("study:settings", input => {
+    if (input?.aiMode && input.aiMode !== store.snapshot().settings.aiMode) assistant.cancel();
     const result = store.saveSettings(input);
     updateBackground();
     return result;
   });
   handle("study:read-notices", () => store.markNoticesRead());
-  handle("study:ai-status", () => ({ ...assistant.status(), fromEnvironment: Boolean(process.env.OPENAI_API_KEY) }));
+  handle("study:ai-status", () => {
+    const mode = store.snapshot().settings.aiMode;
+    let plan;
+    try { plan = chatgpt.status(); } catch (error) { plan = { signedIn: false, planEnabled: false, model: "", models: [], error: error.message }; }
+    return { configured: mode === "chatgpt" ? plan.planEnabled : vault.configured(), apiKeyConfigured: vault.configured(), mode, chatgpt: { ...plan, error: chatgptError || plan.error }, fromEnvironment: Boolean(process.env.OPENAI_API_KEY) };
+  });
   handle("study:ai-connect", input => {
-    const checked = settingsInput({ model: input?.model }, store.snapshot().settings);
+    const checked = settingsInput({ model: input?.model, aiMode: "api-key" }, store.snapshot().settings);
     if (input?.key) vault.save(input.key);
+    assistant.cancel();
     return store.saveSettings(checked);
   });
-  handle("study:ai-disconnect", () => { vault.remove(); return store.snapshot(); });
+  handle("study:ai-disconnect", () => { assistant.cancel(); vault.remove(); return store.snapshot(); });
+  handle("study:chatgpt-sign-in", async options => {
+    if (options !== undefined && (!options || typeof options !== "object" || (options.newAccount !== undefined && typeof options.newAccount !== "boolean") || (options.consent !== undefined && typeof options.consent !== "boolean"))) throw new Error("Invalid sign-in options.");
+    return connectChatGpt(options);
+  });
+  handle("study:chatgpt-cancel", () => { chatgpt.cancelSignIn(); return store.snapshot(); });
+  handle("study:chatgpt-sign-out", async () => {
+    assistant.cancel();
+    const status = await chatgpt.signOut();
+    broadcast();
+    return { snapshot: store.snapshot(), warning: status.warning };
+  });
+  handle("study:chatgpt-models", async () => { await chatgpt.listModels(); chatgptError = ""; return store.snapshot(); });
+  handle("study:chatgpt-model", id => { chatgpt.selectModel(id); return store.snapshot(); });
+  handle("study:chatgpt-welcome", () => { chatgpt.acknowledgeWelcome(); return store.snapshot(); });
+  handle("study:chatgpt-usage", () => shell.openExternal("https://chatgpt.com/#settings/Usage"));
   handle("study:ai-send", input => assistant.send(input));
   handle("study:clear-chat", () => assistant.clear());
   handle("study:add-document", input => store.addDocument(input));
@@ -274,6 +324,8 @@ export async function start() {
     await shell.openExternal(moodleUrl(url));
   });
   await createWindow();
+  app.on("study:connect-chatgpt", startChatGptSignIn);
+  if (!smokeTest && (process.argv.includes("--connect-chatgpt") || app.studyConnectRequested)) startChatGptSignIn();
   updateBackground();
   if (!smokeTest) {
     const tick = () => void scheduler.tick().then(broadcast).catch(() => {});
@@ -289,6 +341,7 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 app.on("before-quit", () => {
+  chatgpt?.cancelSignIn();
   quitting = true;
   clearInterval(schedulerTimer);
   tray?.destroy();

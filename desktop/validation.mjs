@@ -74,13 +74,17 @@ function routineAction(value) {
 }
 
 export const defaultSettings = () => ({
-  model: "gpt-4.1-mini", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  model: "gpt-4.1-mini", aiMode: "api-key", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   remindersEnabled: false, reminderMinutes: 60, backgroundEnabled: false,
 });
 
 export function settingsInput(input, previous = defaultSettings()) {
   if (!input || typeof input !== "object") throw new Error("Invalid settings.");
   const result = { ...previous };
+  if ("aiMode" in input) {
+    if (!["api-key", "chatgpt"].includes(input.aiMode)) throw new Error("Choose API key or ChatGPT plan.");
+    result.aiMode = input.aiMode;
+  }
   for (const key of ["remindersEnabled", "backgroundEnabled"]) {
     if (key in input) {
       if (typeof input[key] !== "boolean") throw new Error("Invalid setting.");

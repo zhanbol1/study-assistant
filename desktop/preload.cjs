@@ -17,6 +17,13 @@ contextBridge.exposeInMainWorld(
     aiStatus: () => ipcRenderer.invoke("study:ai-status"),
     connectAi: (input) => ipcRenderer.invoke("study:ai-connect", input),
     disconnectAi: () => ipcRenderer.invoke("study:ai-disconnect"),
+    signInChatGpt: (options) => ipcRenderer.invoke("study:chatgpt-sign-in", options),
+    cancelChatGptSignIn: () => ipcRenderer.invoke("study:chatgpt-cancel"),
+    signOutChatGpt: () => ipcRenderer.invoke("study:chatgpt-sign-out"),
+    refreshChatGptModels: () => ipcRenderer.invoke("study:chatgpt-models"),
+    selectChatGptModel: (id) => ipcRenderer.invoke("study:chatgpt-model", id),
+    acknowledgeChatGptWelcome: () => ipcRenderer.invoke("study:chatgpt-welcome"),
+    openChatGptUsage: () => ipcRenderer.invoke("study:chatgpt-usage"),
     sendMessage: (input) => ipcRenderer.invoke("study:ai-send", input),
     clearChat: () => ipcRenderer.invoke("study:clear-chat"),
     addDocument: (input) => ipcRenderer.invoke("study:add-document", input),
@@ -27,6 +34,11 @@ contextBridge.exposeInMainWorld(
       const listener = (_event, value) => callback(value);
       ipcRenderer.on("study:changed", listener);
       return () => ipcRenderer.removeListener("study:changed", listener);
+    },
+    onOpenSettings: (callback) => {
+      const listener = () => callback();
+      ipcRenderer.on("study:open-settings", listener);
+      return () => ipcRenderer.removeListener("study:open-settings", listener);
     },
     syncCourses: () => ipcRenderer.invoke("study:sync-courses"),
     syncAssignments: (id) => ipcRenderer.invoke("study:sync-assignments", id),

@@ -33,7 +33,7 @@ export function AssistantPanel({ state, onUpdate, openSettings }: { state: Snaps
   const [adding, setAdding] = useState(false);
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<{ id: string; title: string; excerpt: string }[]>([]);
-  useEffect(() => { api.aiStatus().then(setStatus).catch(cause => setError(cause.message)); }, []);
+  useEffect(() => { api.aiStatus().then(setStatus).catch(cause => setError(cause.message)); }, [state]);
   useEffect(() => {
     let current = true;
     const timer = setTimeout(() => {
@@ -57,6 +57,7 @@ export function AssistantPanel({ state, onUpdate, openSettings }: { state: Snaps
       <div className="panel-heading"><h2><Sparkles size={18} /> Study companion</h2>
         <button className="text-button" disabled={!!busy || !state.messages.length} onClick={() => void act("Clearing chat", api.clearChat)}>Clear chat</button></div>
       {!status.configured && <div className="info-banner"><span>No AI provider is connected. Connect OpenAI in Settings to ask questions or make practice quizzes.</span><button className="text-button" onClick={openSettings}>Connect</button></div>}
+      {status.mode === "chatgpt" && status.chatgpt?.planEnabled && <div className="info-banner"><span>Using ChatGPT plan · {status.chatgpt.account}{status.chatgpt.model ? ` · ${status.chatgpt.model}` : ""}</span><button className="text-button" onClick={() => void api.openChatGptUsage().catch(cause => setError(cause.message))}>Manage usage</button></div>}
       {error && <p role="alert" className="error-banner">{error}</p>}
       <div className="chat-messages" aria-live="polite">
         {!state.messages.length && <div className="chat-welcome"><Sparkles size={30} /><h3>What would you like to understand?</h3><p>Add notes or text files, choose what to share, then ask for an explanation or a practice quiz.</p></div>}
@@ -70,7 +71,7 @@ export function AssistantPanel({ state, onUpdate, openSettings }: { state: Snaps
       <form className="chat-compose" onSubmit={event => { event.preventDefault(); void send("chat"); }}>
         <label className="field">Your question<textarea name="prompt" rows={3} value={prompt} onChange={event => setPrompt(event.target.value)} required maxLength={6000} placeholder="Explain the chain rule using my notes…" /></label>
         <label className="check-field"><input type="checkbox" checked={includeTasks} onChange={event => setIncludeTasks(event.target.checked)} />Share my task titles, notes, deadlines, and source links</label>
-        <p className="small-note">Sending shares this chat history and relevant excerpts from selected materials with OpenAI. API usage is billed to your account. Answers can contain mistakes.</p>
+        <p className="small-note">Sending shares this chat history and relevant excerpts from selected materials with OpenAI. {status.mode === "chatgpt" ? "Usage counts toward your ChatGPT plan limits." : "API usage is billed to your account."} Answers can contain mistakes.</p>
         <div className="compose-actions"><button className="button secondary" type="button" disabled={!!busy || !prompt.trim() || !status.configured} onClick={() => void send("quiz")}>Make practice quiz</button>
           <button className="button primary" disabled={!!busy || !prompt.trim() || !status.configured}><Send size={15} />Send</button></div>
       </form>

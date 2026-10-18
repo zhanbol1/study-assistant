@@ -10,6 +10,7 @@
   },
   "scripts": {
     "start": "npm run build && electron .",
+    "connect:chatgpt": "npm run build && node scripts/connect-chatgpt.mjs",
     "dev": "node scripts/dev.mjs",
     "preview": "npm run build && vite preview --host 127.0.0.1 --port 4173 --strictPort --configLoader runner",
     "build": "tsc --noEmit && vite build --configLoader runner",
@@ -25,9 +26,10 @@
     "credentials:delete": "npm --prefix lms-agent run credentials:delete"
   },
   "dependencies": {
+    "jose": "^6.2.12",
+    "lucide-react": "^0.468.0",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1",
-    "lucide-react": "^0.468.0"
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

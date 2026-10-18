@@ -7,7 +7,7 @@ A local desktop study workspace built with Electron, React, TypeScript, and SQLi
 - Create, edit, complete, reopen, search, filter, and delete tasks; view a seven-day calendar.
 - Import UCA Moodle courses, assignments, and quizzes, including descriptions and explicit deadlines or quiz availability windows, with source evidence.
 - Preserve completion and locally edited fields across imports. Failed detail reads retain earlier dates; missing links do not delete tasks.
-- Connect an OpenAI API account, chat about selected materials or optional task context, and generate practice quizzes with scoring and explanations.
+- Connect an eligible ChatGPT subscription or an OpenAI API account, chat about selected materials or optional task context, and generate practice quizzes with scoring and explanations.
 - Paste study notes or import UTF-8 `.txt` / `.md` files. Search material text locally and select which materials to share with AI.
 - Run study reminders and read-only coursework checks manually, hourly, daily, or weekly. See next run, last run, and failures.
 - Enable deadline reminders, desktop notifications, a persistent reminder inbox, and continued operation in the system tray.
@@ -49,16 +49,22 @@ Remove stored Moodle credentials with `npm.cmd run credentials:delete`. The [LMS
 
 ## AI and study materials
 
-1. Open **Settings → OpenAI connection** and enter your own API key and a model ID supporting Responses structured outputs. The default is `gpt-4.1-mini`.
+1. Open **Settings → Use your ChatGPT subscription → Continue with ChatGPT**, or configure your own API key under **OpenAI connection**.
 2. Open **Assistant**, paste notes or import a `.txt` / `.md` file, and select materials.
 3. Enter a question and choose **Send**, or enter a topic and choose **Make practice quiz**.
 4. Select quiz answers and choose **Check answers** for scoring and explanations.
 
-API billing belongs to your OpenAI account and is separate from ChatGPT subscriptions. A saved key is configuration, not a completed authentication check: access is verified on the first request. Keys are encrypted with Electron's operating-system-backed `safeStorage`; plaintext fallback backends are refused. Alternatively, launch with `OPENAI_API_KEY` in the environment. Environment keys take precedence; remove the variable and restart to disconnect one.
+To open the app and start subscription sign-in directly, run `npm.cmd run connect:chatgpt`. Complete authentication and plan authorization in your system browser. The app uses the [documented local ChatGPT sign-in flow](https://developers.openai.com/siwc/token-sharing-open-source/sign-in), verifies the identity signature, issuer, audience, expiry, and nonce, and binds the callback to random state and PKCE. Sign-in expires after five minutes and can be cancelled. The app does not buy or upgrade a subscription; OpenAI determines account/workspace eligibility.
+
+After authorizing plan usage, choose a model from the account-specific catalog in Settings. **Using ChatGPT plan** is shown near chat. Requests use your existing plan allowance, and **Manage usage** opens ChatGPT's usage settings. A missing grant, eligibility restriction, or usage limit stops the request; it never silently switches to API billing. A valid identity without plan permission remains signed in and can request permission again. Only the active account is retained. Use **Use another account** to replace it after validation, or **Sign out of ChatGPT** to revoke and remove local tokens.
+
+ChatGPT credentials are kept in an encrypted, atomically written `chatgpt-session.bin` in the app-data folder, with a stable opaque installation ID. Access tokens renew through serialized refreshes; temporary failures preserve the connection, while terminal renewal failures require sign-in again. Sign-out retains the installation ID and account/client mapping, removes tokens, and reports if remote revocation could not be confirmed. No ChatGPT conversation history is imported.
+
+API-key mode remains available as an explicit alternative. API billing belongs to your OpenAI account. The API model defaults to `gpt-4.1-mini`; a saved key is verified on the first request. Keys use operating-system-backed `safeStorage`; plaintext fallback backends are refused. `OPENAI_API_KEY` takes precedence over the saved key **only in API-key mode**. Remove that variable and restart to disconnect an environment key. Changing connection modes or signing out cancels an active request.
 
 Search is local keyword retrieval. Each AI request sends the question, up to twelve recent messages, up to eight relevant passages from selected materials, and task details only if **Share my task titles, notes, deadlines, and source links** is checked. Earlier answers can contain information from previous selections; clear chat to start a separate conversation. Source references identify supplied passages, but do not independently verify AI claims. Review answers and quiz answers against your materials.
 
-The app uses the [OpenAI Responses API](https://developers.openai.com/api/docs/guides/migrate-to-responses) with `store: false` and [structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses). This disables response storage at the API; it is not a blanket zero-retention guarantee. Chat history is stored locally, capped at 100 messages. **Clear chat** removes it. Quiz questions persist; selected answers and scores reset when reopening the screen.
+Both modes use the [OpenAI Responses API](https://developers.openai.com/api/docs/guides/migrate-to-responses) with `store: false` and [structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses). Subscription requests use the public endpoint with the [required streaming format](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference); unsupported API-only fields are omitted, and no answer is saved until `response.completed`. Disabling response storage is not a blanket zero-retention guarantee. Local chat history is capped at 100 messages. **Clear chat** removes it. Quiz questions persist; selected answers and scores reset when reopening the screen.
 
 Materials are limited to 100 documents, 120,000 characters each; imported files must be under 500 KB. Files stay local until selected excerpts are sent. Remove materials using their trash buttons. PDF, Word, OCR, and automatic resource downloads into the AI library are not supported.
 
@@ -112,7 +118,7 @@ npm.cmd run test:desktop
 
 Unit tests cover storage, editing, date normalization and DST ambiguity, validation, retrieval and selection, AI failures, credential storage boundaries, recurring checks, reminder deduplication, and restart behavior. Coursework browser fixtures exercise actual DOM extraction without contacting Moodle.
 
-`test:desktop` uses a hidden native window in `.runtime/desktop-smoke`. It checks encrypted-key setup, IPC, material selection, chat and quiz UI with a **mocked provider transport**, and reminder execution. It contacts neither OpenAI nor Moodle. It requires Electron and Windows permissions for sandboxed processes.
+`test:desktop` uses a hidden native window in `.runtime/desktop-smoke`. It checks encrypted storage, IPC, materials, chat and quiz UI, the actual loopback OAuth callback with a signed fixture identity, subscription model selection and SSE handling, explicit billing modes, reminders, and close-to-tray behavior. Provider endpoints are **mocked**; it contacts neither OpenAI nor Moodle. Unit tests separately check identity validation, callback binding, declined consent, refresh rotation, sign-out, and incomplete or failed streams. Native tests require Electron and Windows permissions for sandboxed processes.
 
 With the preview running, `npm.cmd run test:ui` checks tasks, materials, local search, browser persistence, disconnected AI state, and responsive layouts. Its screenshot is `.runtime/overview.png`.
 

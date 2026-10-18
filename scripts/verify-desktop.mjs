@@ -138,7 +138,8 @@ try {
       if (url === "https://api.openai.com/v1/responses" && JSON.parse(options.body).stream) {
         globalThis.studyPlanRequest = JSON.parse(options.body);
         const output = { answer: "Subscription test answer.", sourceIds: [], questions: [] };
-        return new Response(`data: ${JSON.stringify({ type: "response.completed", response: { status: "completed", output: [{ content: [{ type: "output_text", text: JSON.stringify(output) }] }] } })}\n\n`);
+        // Match the real subscription response: text arrives before an empty terminal output.
+        return new Response(`data: ${JSON.stringify({ type: "response.output_text.done", output_index: 0, content_index: 0, text: JSON.stringify(output) })}\n\ndata: ${JSON.stringify({ type: "response.completed", response: { status: "completed", output: [] } })}\n\n`);
       }
       return prior(url, options);
     };
@@ -170,10 +171,16 @@ try {
   assert.equal(planRequest.stream, true);
   assert.equal(planRequest.max_output_tokens, undefined);
   assert.equal(planRequest.model, "desktop-plan-model");
+  await desktop.evaluate(() => { globalThis.fetch = async () => new Response(JSON.stringify({ error: { code: "subscription_sharing_usage_limit_exceeded" } }), { status: 429, headers: { "Content-Type": "application/json" } }); });
+  await page.getByLabel("Your question", { exact: true }).fill("Another question");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const friendlyError = page.getByRole("alert").filter({ hasText: "usage limit" });
+  await friendlyError.waitFor();
+  assert.ok(!(await friendlyError.innerText()).includes("Error invoking remote method"));
   const planStatus = await page.evaluate(() => window.study.aiStatus());
   assert.ok(!JSON.stringify(planStatus).includes("desktop-plan-access"));
   const signedOut = await page.evaluate(() => window.study.signOutChatGpt());
-  assert.equal(signedOut.warning, "");
+  assert.match(signedOut.warning, /could not be confirmed/, "A provider outage is disclosed while local sign-out still works");
   assert.equal((await page.evaluate(() => window.study.aiStatus())).configured, false, "Signing out never silently switches to the saved API key");
   await page.evaluate(() => window.study.saveSettings({ backgroundEnabled: true }));
   const hidden = await desktop.evaluate(({ BrowserWindow }) => {

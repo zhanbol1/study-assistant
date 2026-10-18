@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { api, isPreview } from "./api";
 import type { AiStatus, Snapshot } from "./types";
+import { errorMessage } from "./errors";
 
 export function ConnectionSettings({ state, onUpdate }: { state: Snapshot; onUpdate: (state: Snapshot) => void }) {
   const [status, setStatus] = useState<AiStatus>({ configured: false });
@@ -22,7 +23,7 @@ export function ConnectionSettings({ state, onUpdate }: { state: Snapshot; onUpd
   async function act(action: () => Promise<Snapshot>, message: string) {
     setBusy(true); setError(""); setNotice("");
     try { onUpdate(await action()); setStatus(await api.aiStatus()); setNotice(message); return true; }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "Could not save settings."); return false; }
+    catch (cause) { setError(errorMessage(cause)); return false; }
     finally { setBusy(false); }
   }
   function signIn(options?: { newAccount?: boolean; consent?: boolean }) {

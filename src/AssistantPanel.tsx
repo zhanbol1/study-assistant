@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { FileText, LoaderCircle, Plus, Search, Send, Sparkles, Trash2 } from "lucide-react";
 import { api, isPreview } from "./api";
 import type { AiStatus, ChatMessage, Snapshot } from "./types";
+import { errorMessage } from "./errors";
 
 function PracticeQuiz({ message }: { message: ChatMessage }) {
   const [answers, setAnswers] = useState<Record<number, number>>({});
@@ -45,7 +46,7 @@ export function AssistantPanel({ state, onUpdate, openSettings }: { state: Snaps
   async function act(label: string, action: () => Promise<Snapshot>) {
     setBusy(label); setError("");
     try { onUpdate(await action()); return true; }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "Could not complete this action."); return false; }
+    catch (cause) { setError(errorMessage(cause)); return false; }
     finally { setBusy(""); }
   }
   async function send(mode: "chat" | "quiz") {

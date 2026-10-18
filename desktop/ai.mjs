@@ -91,7 +91,11 @@ export async function generateOpenAI({ key, model, messages, instructions, subsc
     throw new Error("OpenAI returned an unreadable response.");
   }
   if (body.status !== "completed") throw new Error("The AI response was incomplete. Try a shorter request.");
-  const output = (body.output || []).flatMap(item => item.content || []).filter(item => item.type === "output_text").map(item => item.text).join("");
+  const messagesOut = (body.output || []).filter(item => (!item.type || item.type === "message") && (!item.role || item.role === "assistant"));
+  const finalMessages = messagesOut.some(item => item.phase === "final_answer") ? messagesOut.filter(item => item.phase === "final_answer") : messagesOut.filter(item => item.phase !== "commentary");
+  if (finalMessages.some(item => item.content?.some(part => part.type === "refusal"))) throw new Error("The AI declined this request. Try rephrasing it or asking a different study question.");
+  const output = finalMessages.flatMap(item => item.content || []).filter(item => item?.type === "output_text").map(item => item.text).join("");
+  if (!output.trim()) throw new Error("OpenAI completed the request without an answer. Try again.");
   try { return JSON.parse(output); }
   catch { throw new Error("The AI did not return a study answer. Try again."); }
 }

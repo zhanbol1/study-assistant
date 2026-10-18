@@ -216,6 +216,44 @@ test("changing connections cancels an in-flight answer without saving partial me
   } finally { store.close(); }
 });
 
+test("subscription answers survive an empty terminal output array without duplicating streamed text", async () => {
+  const answer = { answer: "I can explain concepts and make practice quizzes. 📚", sourceIds: [], questions: [] };
+  const text = JSON.stringify(answer);
+  const events = [
+    { type: "response.output_item.added", output_index: 0, item: { id: "reasoning", type: "reasoning" } },
+    { type: "response.output_item.added", output_index: 1, item: { id: "comment", type: "message", role: "assistant", phase: "commentary", content: [] } },
+    { type: "response.output_text.done", output_index: 1, content_index: 0, text: "Working on it…" },
+    { type: "response.output_item.added", output_index: 2, item: { id: "final", type: "message", role: "assistant", phase: "final_answer", content: [] } },
+    { type: "response.content_part.added", output_index: 2, content_index: 0, part: { type: "output_text", text: "" } },
+    ...[text.slice(0, 30), text.slice(30)].map(delta => ({ type: "response.output_text.delta", output_index: 2, content_index: 0, delta })),
+    { type: "response.output_text.done", output_index: 2, content_index: 0, text },
+    { type: "response.output_item.done", output_index: 2, item: { id: "final", type: "message", role: "assistant", phase: "final_answer", content: [{ type: "output_text", text }] } },
+    { type: "response.completed", response: { status: "completed", output: [] } },
+  ];
+  const bytes = new TextEncoder().encode(events.map(value => `data: ${JSON.stringify(value)}\r\n\r\n`).join(""));
+  const response = new Response(new ReadableStream({ start(controller) { for (let index = 0; index < bytes.length; index += 7) controller.enqueue(bytes.slice(index, index + 7)); controller.close(); } }));
+  assert.deepEqual(await generateOpenAI({ subscription: true, fetchImpl: async () => response }), answer);
+});
+
+test("text-done events recover sparse terminal responses but never partial or failed requests", async () => {
+  const answer = { answer: "A study tip.", sourceIds: [], questions: [] };
+  const textDone = `data: ${JSON.stringify({ type: "response.output_text.done", output_index: 0, content_index: 0, text: JSON.stringify(answer) })}\n\n`;
+  const generate = tail => generateOpenAI({ subscription: true, fetchImpl: async () => new Response(textDone + tail) });
+  assert.deepEqual(await generate('data: {"type":"response.completed","response":{"status":"completed","output":[]}}\n\n'), answer);
+  await assert.rejects(generate(""), /stopped before/);
+  await assert.rejects(generate('data: {"type":"response.incomplete"}\n\n'), /could not complete/);
+  await assert.rejects(generate('data: {"type":"response.failed","response":{"error":{"code":"subscription_sharing_usage_limit_exceeded"}}}\n\n'), /usage limit/);
+});
+
+test("refusals and genuinely empty completions have distinct readable errors", async () => {
+  const generate = events => generateOpenAI({ subscription: true, fetchImpl: async () => new Response(events.map(value => `data: ${JSON.stringify(value)}\n\n`).join("")) });
+  await assert.rejects(generate([
+    { type: "response.refusal.done", output_index: 0, content_index: 0, refusal: "Cannot help with this request." },
+    { type: "response.completed", response: { status: "completed", output: [] } },
+  ]), /declined/);
+  await assert.rejects(generate([{ type: "response.completed", response: { status: "completed", output: [] } }]), /without an answer/);
+});
+
 test("cancelling during discovery prevents a browser sign-in from opening later", async () => {
   const f = fixture();
   let release;

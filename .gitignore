@@ -13,3 +13,7 @@ out/
 coverage/
 .DS_Store
 Thumbs.db
+.runtime/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

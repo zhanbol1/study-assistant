@@ -1,0 +1,36 @@
+{
+  "name": "study-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A local-first desktop study companion with Moodle integration.",
+  "main": "desktop/bootstrap.cjs",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "npm run build && electron .",
+    "dev": "node scripts/dev.mjs",
+    "preview": "npm run build && vite preview --host 127.0.0.1 --port 4173 --strictPort --configLoader runner",
+    "build": "tsc --noEmit && vite build --configLoader runner",
+    "test": "node --test test/*.test.mjs && npm --prefix lms-agent test",
+    "test:ui": "node scripts/verify-ui.mjs",
+    "test:desktop": "node scripts/verify-desktop.mjs",
+    "lms:install": "npm --prefix lms-agent install",
+    "lms:browser": "node scripts/install-browser.mjs",
+    "credentials:set": "npm --prefix lms-agent run credentials:set",
+    "credentials:delete": "npm --prefix lms-agent run credentials:delete"
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "lucide-react": "^0.468.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "electron": "^44.9.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.4"
+  }
+}

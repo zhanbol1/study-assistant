@@ -43,6 +43,8 @@ Login automation recognizes URLs containing `/login` and common username/passwor
 
 Sanitized output is written to `artifacts/discovery.json`. Treat assignment and course names in that file as private educational data.
 
+The desktop app sets `LMS_DATA_DIR` so its worker writes `artifacts/` and `downloads/` under the app's private data directory instead of this project. Standalone commands retain the paths above unless you set that variable yourself.
+
 List courses visible in the Moodle course overview:
 
 ```powershell

@@ -8,10 +8,10 @@ process.parentPort.once("message", async ({ data }) => {
       );
       result = await listCourses();
     } else if (data.operation === "assignments") {
-      const { listAssignments } = await import(
-        "../lms-agent/src/browser/assignments.js"
+      const { listCoursework } = await import(
+        "../lms-agent/src/browser/coursework.js"
       );
-      result = await listAssignments(data.courseId);
+      result = await listCoursework(data.courseId, data.timeZone);
     } else throw new Error("Unsupported Moodle operation.");
     process.parentPort.postMessage({ ok: true, result });
   } catch (error) {

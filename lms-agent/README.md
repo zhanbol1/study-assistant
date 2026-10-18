@@ -94,6 +94,8 @@ node src/bridge/client.js download 1217 501
 
 Replace the example IDs with a course ID returned by course listing and an activity ID returned by activity listing. Assignment listing returns titles, sections, and links found on the course page; it does not retrieve assignment details or submissions.
 
+The desktop app's **Import coursework** uses a separate coursework reader. It reads assignment and quiz detail pages, descriptions, explicit deadlines, quiz availability windows, and date evidence. It supports machine timestamps and explicit English dates interpreted in the time zone configured in desktop Settings. Uncertain dates remain unknown; submissions and quiz attempts are never opened. The standalone assignment-listing command retains its title/section/link response.
+
 Downloads accept only Moodle `resource` or `folder` activities found in the selected course. Folder downloads request a ZIP archive; resource downloads request the activity URL and follow redirects. The app saves the response body without validating that it is the intended file, so a resource page may be saved as HTML instead of its linked document.
 
 Files are saved under `downloads/`, with the activity ID prefixed to a sanitized filename. Repeating a download with the same filename overwrites the existing local file. Responses larger than 100 MiB (104,857,600 bytes) are rejected before saving, but only after the entire response has been downloaded into memory. This is not a network-transfer or memory-use limit.

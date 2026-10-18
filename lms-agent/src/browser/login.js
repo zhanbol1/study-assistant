@@ -38,6 +38,11 @@ export async function ensureAuthenticated(page, destinationUrl) {
     if (looksLikeLoginPage(page)) {
       throw new Error('LMS login did not complete. Credentials, MFA, or SSO may require attention.');
     }
+    // Some Moodle login flows land on the dashboard rather than the requested course.
+    // Revisit the requested read-only page after authentication so an empty dashboard
+    // cannot be mistaken for an empty course.
+    await page.goto(destinationUrl, { waitUntil: 'domcontentloaded' });
+    if (looksLikeLoginPage(page)) throw new Error('LMS login did not persist.');
   } finally {
     credential.username = '';
     credential.password = '';

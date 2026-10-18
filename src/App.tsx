@@ -25,8 +25,10 @@ import {
   Workflow,
   X,
 } from "lucide-react";
-import { api, isPreview } from "./api";
-import type { Snapshot, Task, TaskKind } from "./types";
+import { api, isPreview, defaultSettings } from "./api";
+import { AssistantPanel } from "./AssistantPanel";
+import { ConnectionSettings } from "./ConnectionSettings";
+import type { Snapshot, Task, TaskKind, Cadence } from "./types";
 
 type Page =
   | "Overview"
@@ -44,7 +46,7 @@ const nav = [
   { page: "Study routines", icon: Workflow },
   { page: "Assistant", icon: Sparkles },
 ] as const;
-const empty: Snapshot = { tasks: [], courses: [], routines: [], sync: null };
+const empty: Snapshot = { tasks: [], courses: [], routines: [], sync: null, settings: defaultSettings, documents: [], messages: [], notices: [] };
 const kindLabels: Record<TaskKind, string> = {
   homework: "Homework",
   exam: "Exam",
@@ -62,7 +64,7 @@ function formatDate(value: string, includeTime = false) {
   });
 }
 function deadlineLabel(task: Task) {
-  if (!task.dueAt) return "Check deadline in Moodle";
+  if (!task.dueAt) return task.source === "moodle" ? "Check deadline in Moodle" : "No deadline";
   const date = new Date(task.dueAt);
   const today = new Date();
   const tomorrow = new Date();
@@ -98,6 +100,9 @@ export function App() {
   const [modal, setModal] = useState<"task" | "routine" | null>(null);
   const [detail, setDetail] = useState<Task | null>(null);
   const [editing, setEditing] = useState<Task | null>(null);
+  useEffect(() => {
+    return api.onSnapshot(setState);
+  }, []);
   useEffect(() => {
     let active = true;
     api
@@ -231,7 +236,6 @@ export function App() {
                     }
                   </span>
                 )}
-              {item === "Assistant" && <span className="soon-dot" />}
             </button>
           ))}
         </nav>
@@ -274,6 +278,7 @@ export function App() {
             <span>{page}</span>
           </div>
           <div className="topbar-right">
+            {!!state.notices.filter(notice => !notice.read).length && <button className="text-button" onClick={() => navigate("Settings")}>{state.notices.filter(notice => !notice.read).length} new reminders</button>}
             <span className="local-indicator">
               <span />
               {isPreview ? "Preview · sample data" : "Local workspace"}
@@ -333,7 +338,7 @@ export function App() {
                         : page === "Study routines"
                           ? "Write down where to look and how you like to study."
                           : page === "Assistant"
-                            ? "A place for your future AI study companion."
+                            ? "Ask questions, explore your materials, and practice what you learn."
                             : "Your workspace, your connections, your data."}
               </p>
             </div>
@@ -695,7 +700,7 @@ export function App() {
                         <Workflow size={21} />
                         <span>
                           <strong>Study your way</strong>
-                          <small>Save a routine for future automation</small>
+                          <small>Schedule coursework checks and study reminders</small>
                         </span>
                         <ChevronRight size={16} />
                       </button>
@@ -765,7 +770,7 @@ export function App() {
                                 }
                               >
                                 <ArrowDownToLine size={15} />
-                                Import assignments
+                                Import coursework
                               </button>
                               <button
                                 className="icon-button"
@@ -811,9 +816,9 @@ export function App() {
                   <div className="info-banner">
                     <Workflow size={19} />
                     <span>
-                      Routines are saved instructions for now. Browser
-                      demonstration, scheduled checks, and automatic execution
-                      are coming in a later version.
+                      Run a study reminder or a read-only Moodle coursework check.
+                      Schedules run while the app is open or in the tray. Your instructions
+                      are reminder text; they do not execute arbitrary browser actions.
                     </span>
                   </div>
                   {state.routines.length ? (
@@ -824,7 +829,7 @@ export function App() {
                           key={routine.id}
                         >
                           <span className="kind-badge study">
-                            Saved instructions
+                            {routine.action === "sync" ? "Moodle check" : "Study reminder"}
                           </span>
                           <h2>{routine.name}</h2>
                           <span className="course-caption">
@@ -833,6 +838,16 @@ export function App() {
                           <p className="routine-instructions">
                             {routine.instructions}
                           </p>
+                          <label className="field">Schedule
+                            <select aria-label={`Schedule ${routine.name}`} value={routine.cadence || "manual"} disabled={!!busy || isPreview}
+                              onChange={event => void perform("Updating schedule", () => api.setRoutineSchedule(routine.id, event.target.value as Cadence))}>
+                              <option value="manual">Manual only</option><option value="hourly">Every hour</option><option value="daily">Every day</option><option value="weekly">Every week</option>
+                            </select>
+                          </label>
+                          {routine.nextRunAt && <p>Next check: {formatDate(routine.nextRunAt, true)}</p>}
+                          {routine.lastRunAt && <p>Last run: {formatDate(routine.lastRunAt, true)}</p>}
+                          {routine.lastError && <p className="form-error" role="status">{routine.lastError}</p>}
+                          <button className="button secondary" disabled={!!busy || isPreview} onClick={() => void perform("Running routine", () => api.runRoutine(routine.id))}>Run now</button>
                           <button
                             disabled={!!busy}
                             className="text-button danger"
@@ -870,56 +885,12 @@ export function App() {
               )}
 
               {page === "Assistant" && (
-                <section className="panel assistant-empty">
-                  <span className="assistant-orb">
-                    <Sparkles size={37} />
-                  </span>
-                  <div className="eyebrow">THE NEXT CHAPTER</div>
-                  <h2>A study companion that knows your coursework.</h2>
-                  <p>
-                    The AI connection is not implemented yet. This version
-                    builds the local workspace it will use: your tasks, courses,
-                    and study routines.
-                  </p>
-                  <div className="assistant-features">
-                    <div>
-                      <FileText size={20} />
-                      <strong>Answers with sources</strong>
-                      <span>
-                        Use your course materials to explain ideas and draft
-                        solutions.
-                      </span>
-                    </div>
-                    <div>
-                      <GraduationCap size={20} />
-                      <strong>Practice with purpose</strong>
-                      <span>
-                        Prepare with quizzes and focused study sessions.
-                      </span>
-                    </div>
-                    <div>
-                      <Workflow size={20} />
-                      <strong>Remember your routine</strong>
-                      <span>
-                        Collect information from the places you choose.
-                      </span>
-                    </div>
-                  </div>
-                  <div className="info-banner">
-                    No AI provider is connected. No course content is being sent
-                    to an AI service.
-                  </div>
-                  <button
-                    className="button secondary"
-                    onClick={() => navigate("Study routines")}
-                  >
-                    Start with a study routine <ArrowRight size={16} />
-                  </button>
-                </section>
+                <AssistantPanel state={state} onUpdate={setState} openSettings={() => navigate("Settings")} />
               )}
 
               {page === "Settings" && (
                 <div className="settings-stack">
+                  <ConnectionSettings state={state} onUpdate={setState} />
                   <section className="panel settings-card">
                     <span className="section-icon">
                       <BookOpen size={22} />
@@ -963,10 +934,10 @@ export function App() {
                         operating-system account protects access.
                       </p>
                       <p>
-                        Moodle assignment imports currently include titles,
-                        sections, and source links. Deadlines and exam dates
-                        must be added manually. Saved records remain available
-                        offline.
+                        Coursework imports include assignments and quizzes,
+                        descriptions, source links, and explicit dates when readable.
+                        You can edit uncertain or missing dates. Saved records remain
+                        available offline.
                       </p>
                     </div>
                   </section>
@@ -975,13 +946,16 @@ export function App() {
                       <Sparkles size={22} />
                     </span>
                     <div>
-                      <h2>What comes next</h2>
+                      <h2>Reminders and routine history</h2>
                       <p>
-                        AI provider sign-in, deadline extraction, document
-                        search, routine demonstrations, and background reminders
-                        are not available in this version. Nothing runs in the
-                        background after the app closes.
+                        Deadline reminders and routine results are saved in your
+                        inbox, even if system notifications are disabled. Enable
+                        the system tray option above to keep schedules running
+                        when the window is closed.
                       </p>
+                      {!!state.notices.length && <button className="text-button" disabled={!!busy} onClick={() => void perform("Updating inbox", api.markNoticesRead)}>Mark all read</button>}
+                      <div className="notice-list">{state.notices.slice().reverse().map(notice => <article className={notice.read ? "notice read" : "notice"} key={notice.id}><strong>{notice.title}</strong><p>{notice.body}</p><small>{formatDate(notice.createdAt, true)}</small></article>)}</div>
+                      {!state.notices.length && <p>No reminders yet.</p>}
                     </div>
                   </section>
                 </div>
@@ -1036,6 +1010,8 @@ export function App() {
                     name: value("name"),
                     course: value("course"),
                     instructions: value("instructions"),
+                    action: value("action") as "reminder" | "sync",
+                    courseId: value("courseId"),
                   }),
                 ).then((ok) => {
                   if (ok) setModal(null);
@@ -1105,8 +1081,8 @@ export function App() {
             ) : (
               <>
                 <p className="modal-intro">
-                  Describe where to find information and what to do with it.
-                  Instructions are saved locally; they won’t execute yet.
+                  Choose a study reminder or a read-only coursework check.
+                  Instructions are saved as reminder text. Set a recurring schedule after saving.
                 </p>
                 <label className="field">
                   Routine name
@@ -1125,6 +1101,14 @@ export function App() {
                     maxLength={200}
                     placeholder="e.g. Calculus II"
                   />
+                </label>
+                <label className="field">
+                  Routine action
+                  <select name="action" defaultValue="reminder"><option value="reminder">Study reminder</option><option value="sync">Import Moodle coursework</option></select>
+                </label>
+                <label className="field">
+                  Moodle course (required for coursework checks)
+                  <select name="courseId" defaultValue=""><option value="">Select a synced course</option>{state.courses.map(course => <option value={course.id} key={course.id}>{course.name}</option>)}</select>
                 </label>
                 <label className="field">
                   Where should the assistant look, and what should it collect?
@@ -1186,9 +1170,11 @@ export function App() {
           {detail.notes && <p className="detail-notes">{detail.notes}</p>}
           <div className="info-banner">
             {detail.source === "moodle"
-              ? `Imported from Moodle${detail.checkedAt ? ` · checked ${formatDate(detail.checkedAt, true)}` : ""}. No deadline was imported. Completion is tracked locally.`
+              ? `Imported from Moodle${detail.checkedAt ? ` · checked ${formatDate(detail.checkedAt, true)}` : ""}. Completion and edits are tracked locally.`
               : "Added by you. This task is stored locally."}
           </div>
+          {detail.opensAt && <p>Opens: {formatDate(detail.opensAt, true)}</p>}
+          {detail.deadlineEvidence && <p className="detail-notes">Source date evidence: {detail.deadlineEvidence}{detail.deadlineTimeZone ? ` (${detail.deadlineTimeZone})` : ""}</p>}
           {error && (
             <p className="form-error" role="alert">
               {error}

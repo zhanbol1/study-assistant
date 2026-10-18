@@ -7,12 +7,21 @@ import {
   session,
   protocol,
   net,
+  safeStorage,
+  dialog,
+  Notification,
+  Tray,
+  Menu,
+  nativeImage,
 } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createStore } from "./store.mjs";
 import { numericId, moodleUrl } from "./validation.mjs";
+import { settingsInput } from "./validation.mjs";
+import { createKeyVault, createAssistant, searchDocuments } from "./ai.mjs";
+import { createScheduler } from "./scheduler.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const devUrl = process.env.STUDY_DEV_URL;
@@ -22,9 +31,15 @@ const smokeTest = process.argv.includes("--smoke-test");
 let store;
 let window;
 let syncing = false;
+let assistant;
+let vault;
+let scheduler;
+let schedulerTimer;
+let tray;
+let quitting = false;
 const workers = new Set();
 
-async function readMoodle(operation, courseId) {
+async function readMoodle(operation, courseId, background = false) {
   if (syncing) throw new Error("A Moodle sync is already running.");
   if (process.platform !== "win32")
     throw new Error(
@@ -40,7 +55,8 @@ async function readMoodle(operation, courseId) {
           stdio: "ignore",
           env: {
             ...process.env,
-            LMS_HEADLESS: "false",
+            OPENAI_API_KEY: "",
+            LMS_HEADLESS: background ? "true" : "false",
             PLAYWRIGHT_BROWSERS_PATH: path.join(
               root,
               "lms-agent/.playwright-browsers",
@@ -56,7 +72,7 @@ async function readMoodle(operation, courseId) {
           finish(
             new Error("Moodle sync timed out. Your saved data is unchanged."),
           ),
-        180_000,
+        600_000,
       );
       function finish(error, value) {
         if (finished) return;
@@ -67,7 +83,8 @@ async function readMoodle(operation, courseId) {
         if (error) reject(error);
         else resolve(value);
       }
-      child.on("spawn", () => child.postMessage({ operation, courseId }));
+      child.on("spawn", () => child.postMessage({ operation, courseId, timeZone: store.snapshot().settings.timeZone }));
+      child.on("error", () => finish(new Error("Moodle worker could not start.")));
       child.on("message", (message) => {
         if (message?.ok === true) finish(null, message.result);
         else
@@ -90,6 +107,43 @@ async function readMoodle(operation, courseId) {
   } finally {
     syncing = false;
   }
+}
+
+function broadcast() {
+  if (window && !window.isDestroyed()) window.webContents.send("study:changed", store.snapshot());
+}
+
+async function showWorkspace() {
+  if (!window) await createWindow();
+  window.show();
+  window.focus();
+}
+
+function updateBackground() {
+  if (store.snapshot().settings.backgroundEnabled && !tray) {
+    const pixels = Buffer.alloc(16 * 16 * 4);
+    const glyph = ["01110", "10000", "10000", "01110", "00001", "00001", "11110"];
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+      const foreground = glyph[y - 4]?.[x - 5] === "1";
+      const index = (y * 16 + x) * 4;
+      pixels.set(foreground ? [255, 255, 255, 255] : [195, 105, 110, 255], index);
+    }
+    tray = new Tray(nativeImage.createFromBitmap(pixels, { width: 16, height: 16 }));
+    tray.setToolTip("Study Assistant — reminders running");
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: "Open Study Assistant", click: () => void showWorkspace() },
+      { label: "Quit", click: () => app.quit() },
+    ]));
+    tray.on("double-click", () => void showWorkspace());
+  } else if (!store.snapshot().settings.backgroundEnabled && tray) {
+    tray.destroy();
+    tray = null;
+  }
+}
+
+function syncCourse(id, background = false) {
+  numericId(id);
+  return readMoodle("assignments", id, background).then(result => store.cacheAssignments(id, result));
 }
 
 function handle(channel, action) {
@@ -134,6 +188,12 @@ async function createWindow() {
   window.on("closed", () => {
     window = null;
   });
+  window.on("close", event => {
+    if (!quitting && tray && store.snapshot().settings.backgroundEnabled) {
+      event.preventDefault();
+      window.hide();
+    }
+  });
   if (devUrl) await window.loadURL(devUrl);
   else await window.loadURL("study://app/index.html");
 }
@@ -143,6 +203,16 @@ export async function start() {
   console.log("[study] Initializing local workspace...");
   fs.mkdirSync(app.getPath("userData"), { recursive: true });
   store = createStore(path.join(app.getPath("userData"), "study.sqlite"));
+  vault = createKeyVault(path.join(app.getPath("userData"), "openai-key.bin"), safeStorage);
+  assistant = createAssistant({ store, vault });
+  scheduler = createScheduler({ store, syncCourse: id => syncCourse(id, true), notify: (title, body) => {
+    broadcast();
+    if (!smokeTest && Notification.isSupported()) {
+      const notification = new Notification({ title, body, silent: false });
+      notification.on("click", () => void showWorkspace());
+      notification.show();
+    }
+  } });
   session.defaultSession.setPermissionRequestHandler(
     (_contents, _permission, callback) => callback(false),
   );
@@ -164,19 +234,52 @@ export async function start() {
   handle("study:delete-task", (id) => store.deleteTask(id));
   handle("study:add-routine", (input) => store.addRoutine(input));
   handle("study:delete-routine", (id) => store.deleteRoutine(id));
+  handle("study:routine-schedule", (id, cadence) => store.setRoutineSchedule(id, cadence));
+  handle("study:run-routine", async id => {
+    try { return await scheduler.runRoutine(id); } finally { broadcast(); }
+  });
+  handle("study:settings", input => {
+    const result = store.saveSettings(input);
+    updateBackground();
+    return result;
+  });
+  handle("study:read-notices", () => store.markNoticesRead());
+  handle("study:ai-status", () => ({ ...assistant.status(), fromEnvironment: Boolean(process.env.OPENAI_API_KEY) }));
+  handle("study:ai-connect", input => {
+    const checked = settingsInput({ model: input?.model }, store.snapshot().settings);
+    if (input?.key) vault.save(input.key);
+    return store.saveSettings(checked);
+  });
+  handle("study:ai-disconnect", () => { vault.remove(); return store.snapshot(); });
+  handle("study:ai-send", input => assistant.send(input));
+  handle("study:clear-chat", () => assistant.clear());
+  handle("study:add-document", input => store.addDocument(input));
+  handle("study:delete-document", id => store.deleteDocument(id));
+  handle("study:search-documents", query => searchDocuments(query, store.documents()));
+  handle("study:import-document", async course => {
+    const selected = await dialog.showOpenDialog(window, { title: "Add study material", properties: ["openFile"], filters: [{ name: "Text and Markdown", extensions: ["txt", "md"] }] });
+    if (selected.canceled || !selected.filePaths[0]) return store.snapshot();
+    const filename = selected.filePaths[0];
+    if (![".txt", ".md"].includes(path.extname(filename).toLowerCase())) throw new Error("Choose a .txt or .md file.");
+    if (fs.statSync(filename).size > 500000) throw new Error("Choose a text file smaller than 500 KB.");
+    const content = fs.readFileSync(filename, "utf8");
+    if (content.includes("\u0000")) throw new Error("Choose a plain text file.");
+    return store.addDocument({ title: path.basename(filename), course, content });
+  });
   handle("study:sync-courses", async () =>
     store.cacheCourses(await readMoodle("courses")),
   );
-  handle("study:sync-assignments", async (id) =>
-    store.cacheAssignments(
-      numericId(id),
-      await readMoodle("assignments", numericId(id)),
-    ),
-  );
+  handle("study:sync-assignments", id => syncCourse(id));
   handle("study:open-source", async (url) => {
     await shell.openExternal(moodleUrl(url));
   });
   await createWindow();
+  updateBackground();
+  if (!smokeTest) {
+    const tick = () => void scheduler.tick().then(broadcast).catch(() => {});
+    schedulerTimer = setInterval(tick, 30000);
+    tick();
+  }
 }
 
 app.on("activate", () => {
@@ -186,6 +289,9 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 app.on("before-quit", () => {
+  quitting = true;
+  clearInterval(schedulerTimer);
+  tray?.destroy();
   for (const child of workers) child.kill();
 });
 app.on("will-quit", () => store?.close());

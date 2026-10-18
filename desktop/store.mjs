@@ -6,6 +6,9 @@ import {
   text,
   numericId,
   moodleUrl,
+  defaultSettings,
+  settingsInput,
+  optionalDate,
 } from "./validation.mjs";
 
 export function createStore(filename) {
@@ -39,6 +42,10 @@ export function createStore(filename) {
         courses: all("course"),
         routines: all("routine"),
         sync: get("sync"),
+        settings: { ...defaultSettings(), ...get("settings") },
+        documents: all("document").map(({ content, ...metadata }) => metadata),
+        messages: all("message"),
+        notices: all("notice"),
       };
     },
     addTask(input) {
@@ -85,12 +92,70 @@ export function createStore(filename) {
       return this.snapshot();
     },
     addRoutine(input) {
+      const checked = routineInput(input);
+      if (checked.action === "sync" && !get(`course:${checked.courseId}`)) throw new Error("Choose a synced Moodle course.");
       const routine = {
-        ...routineInput(input),
+        ...checked,
         id: randomUUID(),
         createdAt: new Date().toISOString(),
+        cadence: "manual", nextRunAt: "",
       };
       save(routine.id, "routine", routine);
+      return this.snapshot();
+    },
+    saveSettings(input) {
+      save("settings", "meta", settingsInput(input, this.snapshot().settings));
+      return this.snapshot();
+    },
+    setRoutineSchedule(id, cadence, now = Date.now()) {
+      text(id, "Routine ID", 100);
+      const routine = all("routine").find(item => item.id === id);
+      if (!routine) throw new Error("Routine not found.");
+      const intervals = { manual: 0, hourly: 3600000, daily: 86400000, weekly: 604800000 };
+      if (!Object.hasOwn(intervals, cadence)) throw new Error("Choose a supported schedule.");
+      save(id, "routine", { ...routine, cadence, nextRunAt: intervals[cadence] ? new Date(now + intervals[cadence]).toISOString() : "" });
+      return this.snapshot();
+    },
+    recordRoutineRun(id, error = "", now = Date.now()) {
+      const routine = all("routine").find(item => item.id === id);
+      if (!routine) return;
+      const interval = { hourly: 3600000, daily: 86400000, weekly: 604800000 }[routine.cadence];
+      save(id, "routine", { ...routine, lastRunAt: new Date(now).toISOString(), lastError: String(error).slice(0, 500), nextRunAt: interval ? new Date(now + interval).toISOString() : "" });
+    },
+    addNotice(key, title, body, now = Date.now()) {
+      const id = `notice:${text(key, "Notice key", 300)}`;
+      const stamp = key.startsWith("deadline:") ? `delivered:${key}` : "";
+      if (get(id) || (stamp && get(stamp))) return false;
+      save(id, "notice", { id, title: text(title, "Notice title", 300), body: text(body, "Notice body", 4000), createdAt: new Date(now).toISOString(), read: false });
+      if (stamp) save(stamp, "meta", { deliveredAt: new Date(now).toISOString() });
+      // Keep delivery stamps independently so inbox trimming cannot resend reminders.
+      const notices = all("notice");
+      for (const item of notices.slice(0, -200)) db.prepare("DELETE FROM records WHERE id = ? AND type = 'notice'").run(item.id);
+      return true;
+    },
+    markNoticesRead() {
+      for (const notice of all("notice")) save(notice.id, "notice", { ...notice, read: true });
+      return this.snapshot();
+    },
+    addDocument(input) {
+      if (all("document").length >= 100) throw new Error("Remove a document before adding more (100 maximum).");
+      const document = { id: randomUUID(), title: text(input?.title, "Document title", 200), course: text(input?.course, "Course", 200, true), content: text(input?.content, "Document text", 120000), createdAt: new Date().toISOString() };
+      save(document.id, "document", document);
+      return this.snapshot();
+    },
+    documents() { return all("document"); },
+    deleteDocument(id) {
+      text(id, "Document ID", 100);
+      db.prepare("DELETE FROM records WHERE id = ? AND type = 'document'").run(id);
+      return this.snapshot();
+    },
+    appendMessage(message) {
+      const id = randomUUID();
+      save(id, "message", { ...message, id, createdAt: new Date().toISOString() });
+      for (const item of all("message").slice(0, -100)) db.prepare("DELETE FROM records WHERE id = ? AND type = 'message'").run(item.id);
+    },
+    clearMessages() {
+      db.prepare("DELETE FROM records WHERE type = 'message'").run();
       return this.snapshot();
     },
     deleteRoutine(id) {
@@ -140,9 +205,13 @@ export function createStore(filename) {
           title: text(assignment.title, "Assignment title"),
           course: course.name,
           courseId,
-          notes: text(assignment.section, "Section", 300, true),
-          dueAt: "",
-          kind: "homework",
+          notes: assignment.detailsRead === false ? previous?.notes || "" : text(assignment.description || assignment.section, "Description", 4000, true),
+          dueAt: assignment.detailsRead === false ? previous?.dueAt || "" : optionalDate(assignment.dueAt),
+          opensAt: assignment.detailsRead === false ? previous?.opensAt || "" : optionalDate(assignment.opensAt),
+          kind: ["exam", "quiz"].includes(assignment.kind) ? assignment.kind : "homework",
+          deadlineEvidence: text(assignment.deadlineEvidence, "Date evidence", 1000, true),
+          deadlineTimeZone: text(assignment.deadlineTimeZone, "Source time zone", 100, true),
+          detailsRead: assignment.detailsRead === true,
           completed: previous?.completed || false,
           source: "moodle",
           sourceUrl: moodleUrl(assignment.url),

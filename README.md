@@ -1,44 +1,35 @@
 # Study Assistant
 
-A local desktop study workspace, starting with Windows and structured for future macOS and Linux support. The interface uses the working name **Studyspace**.
+A local desktop study workspace built with Electron, React, TypeScript, and SQLite. The interface uses the working name **Studyspace**. Windows is the primary target; Moodle credentials currently use Windows Credential Manager.
 
-## What works now
+## Features
 
-- Overview with task counts, a seven-day calendar, search, and status filters.
-- Add homework, exams, quizzes, and study sessions with optional deadlines and notes.
-- Edit task titles, courses, types, deadlines, and notes; complete, reopen, and remove tasks. Deadlines entered in local time are stored as UTC.
-- Save study routine instructions locally.
-- Sync visible UCA Moodle courses and import assignment titles, sections, and source links using the existing Playwright agent.
-- Keep local completion state and edited fields when importing assignments again.
-- Open validated course and assignment links in the default browser.
-- Persist desktop records in SQLite under the operating system's application-data folder.
+- Create, edit, complete, reopen, search, filter, and delete tasks; view a seven-day calendar.
+- Import UCA Moodle courses, assignments, and quizzes, including descriptions and explicit deadlines or quiz availability windows, with source evidence.
+- Preserve completion and locally edited fields across imports. Failed detail reads retain earlier dates; missing links do not delete tasks.
+- Connect an OpenAI API account, chat about selected materials or optional task context, and generate practice quizzes with scoring and explanations.
+- Paste study notes or import UTF-8 `.txt` / `.md` files. Search material text locally and select which materials to share with AI.
+- Run study reminders and read-only coursework checks manually, hourly, daily, or weekly. See next run, last run, and failures.
+- Enable deadline reminders, desktop notifications, a persistent reminder inbox, and continued operation in the system tray.
 
-AI sign-in/chat, automatic deadline and exam extraction, document search, demonstrated browser routines, routine execution, notifications, and background scheduling are **not implemented yet**. Routines currently store instructions only. This is a development build, not a packaged installer.
+This is a development build, not a packaged installer. Browser demonstrations, arbitrary instruction-driven browser automation, PDF/Word extraction, and automatic launch at OS login are not implemented.
 
-## Run the desktop app
+## Run
 
-Requires Node.js **22.13 or newer** and npm. Windows is required for the existing Moodle credential helper; local task management is designed to work across platforms but has not yet been validated on macOS or Linux.
-
-From the repository root:
+Requires Node.js **22.13 or newer** and npm.
 
 ```powershell
 npm.cmd install
 npm.cmd start
 ```
 
-`start` builds the React interface and launches Electron. Electron may download its platform binary on the first launch. The desktop workspace starts empty; it never loads the browser preview's sample tasks.
+`start` checks and builds the interface, then launches Electron. Electron may download its binary on first installation. Desktop records start empty and never use the preview's sample data.
 
-For development with live updates:
+Use `npm.cmd run dev` for live UI updates. The development server binds to `127.0.0.1:5173`.
 
-```powershell
-npm.cmd run dev
-```
+## Moodle
 
-The development server is restricted to `127.0.0.1:5173`.
-
-## Connect Moodle
-
-Run the following from your own Windows terminal under the account that will run the app:
+From your own Windows terminal, under the account that runs the app:
 
 ```powershell
 npm.cmd run lms:install
@@ -46,19 +37,40 @@ npm.cmd run lms:browser
 npm.cmd run credentials:set
 ```
 
-Open **Courses → Sync courses**, then choose **Import assignments** on an individual course. Each operation opens a visible browser and signs in as needed. Manual interaction is possible during recognized login flows, but general SSO/MFA support is not guaranteed. No bridge terminal is needed: Electron manages a separate Moodle worker.
+In **Settings**, set **Moodle display time zone** to match your Moodle profile, for example `Asia/Bishkek`. This is used when dates have no UTC offset. Machine timestamps and ISO dates with explicit offsets do not depend on that setting.
 
-Sync happens only when requested, one operation at a time. The app currently targets `https://ucasaslms.org/`; it does not support entering arbitrary Moodle servers. Moodle course filters and pagination can limit which courses are visible.
+Open **Courses → Sync courses**, then **Import coursework** on a course. Manual sync opens a browser so you can finish recognized login steps. The app targets `https://ucasaslms.org/` and does not edit courses, upload files, attempt quizzes, or submit assignments. Moodle may record accesses or activity completion according to its own rules.
 
-Assignment imports do not retrieve due dates, exam dates, descriptions, or submissions. Imported tasks start with an unknown deadline, with a source link to check Moodle. Open a task and choose **Edit task** to record a deadline or add study notes; these edits remain local and survive later imports. Missing links in a later import do not automatically delete previously imported tasks. Marking a task complete changes this local workspace only.
+Course filters and pagination can limit the visible course list. An import reads up to 200 assignment/quiz detail pages, with an overall worker timeout of ten minutes. Unreadable details are marked in source evidence. Quiz titles containing “exam”, “midterm”, or “final” are categorized as exams; imported opening/closing times describe availability, not necessarily an exam sitting.
 
-Remove stored credentials:
+The reader supports machine timestamps, ISO timestamps, and English dates containing a full date and clock time. Ambiguous numeric dates, relative dates, conflicting dates, unsupported translations, and ambiguous daylight-saving times stay unknown. It does not infer deadlines from announcements or arbitrary prose. Use **Task details → Edit task** to correct dates. Dates are stored in UTC and displayed in your device's local time.
 
-```powershell
-npm.cmd run credentials:delete
-```
+Remove stored Moodle credentials with `npm.cmd run credentials:delete`. The [LMS agent guide](lms-agent/README.md) covers standalone commands and the optional local bridge. The desktop app uses its own worker and does not require the bridge.
 
-See the [LMS agent README](lms-agent/README.md) for its standalone commands and security limitations.
+## AI and study materials
+
+1. Open **Settings → OpenAI connection** and enter your own API key and a model ID supporting Responses structured outputs. The default is `gpt-4.1-mini`.
+2. Open **Assistant**, paste notes or import a `.txt` / `.md` file, and select materials.
+3. Enter a question and choose **Send**, or enter a topic and choose **Make practice quiz**.
+4. Select quiz answers and choose **Check answers** for scoring and explanations.
+
+API billing belongs to your OpenAI account and is separate from ChatGPT subscriptions. A saved key is configuration, not a completed authentication check: access is verified on the first request. Keys are encrypted with Electron's operating-system-backed `safeStorage`; plaintext fallback backends are refused. Alternatively, launch with `OPENAI_API_KEY` in the environment. Environment keys take precedence; remove the variable and restart to disconnect one.
+
+Search is local keyword retrieval. Each AI request sends the question, up to twelve recent messages, up to eight relevant passages from selected materials, and task details only if **Share my task titles, notes, deadlines, and source links** is checked. Earlier answers can contain information from previous selections; clear chat to start a separate conversation. Source references identify supplied passages, but do not independently verify AI claims. Review answers and quiz answers against your materials.
+
+The app uses the [OpenAI Responses API](https://developers.openai.com/api/docs/guides/migrate-to-responses) with `store: false` and [structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses). This disables response storage at the API; it is not a blanket zero-retention guarantee. Chat history is stored locally, capped at 100 messages. **Clear chat** removes it. Quiz questions persist; selected answers and scores reset when reopening the screen.
+
+Materials are limited to 100 documents, 120,000 characters each; imported files must be under 500 KB. Files stay local until selected excerpts are sent. Remove materials using their trash buttons. PDF, Word, OCR, and automatic resource downloads into the AI library are not supported.
+
+## Routines and reminders
+
+Create a **Study reminder** or **Import Moodle coursework** routine. Coursework checks require a synced course. Instructions are reminder text, not executable browser commands. Existing instruction-only routines become manual study reminders.
+
+Choose **Run now** or an hourly, daily, or weekly schedule. Schedules are elapsed intervals from saving or completing a run. After sleep or restart, an overdue routine runs once and advances its next run. Failed runs record an error and wait until the next interval. Automatic Moodle checks use a headless browser; if login needs interaction, use a manual course import.
+
+Enable deadline reminders and choose a lead time in **Settings**. Checks run approximately every 30 seconds. Reminders cover upcoming deadlines inside that lead time and recently overdue tasks (up to 24 hours). Completed tasks are skipped. Delivery is deduplicated across restarts; the inbox keeps the latest 200 notices. OS settings may suppress desktop toasts; the inbox remains available.
+
+Enable **Keep running in the system tray** to continue after closing the window. Open or quit the app from the tray menu. Nothing runs after **Quit**; this build does not register an OS login task. A single normal app instance avoids duplicate schedules. No AI requests are scheduled automatically.
 
 ## Browser preview
 
@@ -66,51 +78,53 @@ See the [LMS agent README](lms-agent/README.md) for its standalone commands and 
 npm.cmd run preview
 ```
 
-Open `http://127.0.0.1:4173`. The browser preview is explicitly labeled and contains sample tasks. Its changes are stored in browser local storage, independently of desktop SQLite. Moodle sync is disabled there. The preview is for inspecting the interface, not hosting a multi-user app.
+Open `http://127.0.0.1:4173`. The labeled preview contains sample tasks and stores changes in browser local storage, separately from desktop SQLite. Moodle, API-key storage, AI requests, native file import, routine execution, and scheduling require the desktop app. This preview is for inspecting the interface, not hosting a multi-user service.
 
-## Architecture
+## Architecture and data
 
 ```text
-src/                     React + TypeScript interface
-desktop/bootstrap.cjs    Synchronous Electron entry point and startup errors
-desktop/main.mjs         Window lifecycle and validated IPC handlers
-desktop/preload.cjs      Narrow interface exposed to the sandboxed renderer
-desktop/store.mjs        SQLite persistence and import reconciliation
-desktop/validation.mjs   Input and Moodle link validation
-desktop/moodle-worker.mjs Isolated process reusing the LMS agent
-lms-agent/               Existing Node.js + Playwright Moodle integration
-test/                    Persistence, validation, and sync regression tests
-scripts/                 Development and Chromium setup helpers
+src/                        React interface and typed API
+desktop/bootstrap.cjs       Electron startup and single-instance lock
+desktop/main.mjs            Validated IPC, workers, notifications, tray
+desktop/preload.cjs          Narrow sandboxed renderer bridge
+desktop/store.mjs            SQLite records and import reconciliation
+desktop/validation.mjs       Inputs, settings, and Moodle URL validation
+desktop/ai.mjs               Encrypted key vault, retrieval, Responses transport
+desktop/scheduler.mjs        Reminders and recurring routines
+desktop/moodle-worker.mjs    Isolated Moodle process
+lms-agent/src/browser/      Browser authentication and coursework readers
+test/                       Storage, dates, AI, and schedule regression tests
+scripts/                    Development and browser/native/live checks
 ```
 
-Desktop data is stored in `study.sqlite` within Electron's `userData` directory (normally `%APPDATA%\Study Assistant` on Windows). Worker artifacts use a `moodle` subdirectory there. Records are not encrypted by the app. The renderer has no direct Node.js, filesystem, credential, or unrestricted IPC access. No AI provider is connected and no AI requests are made.
+`study.sqlite` lives in Electron's `userData` folder (normally `%APPDATA%\Study Assistant` on Windows); encrypted key bytes live beside it as `openai-key.bin`. Worker artifacts use a `moodle` subdirectory. Study records and chat are not encrypted by the app. The renderer has no direct Node.js, filesystem, credential-read, or unrestricted IPC access. API keys never enter snapshots or the Moodle worker.
+
+Do not commit credentials, tokens, browser profiles, downloaded materials, or discovery artifacts. Git ignores dependencies, local browsers, caches, runtime artifacts, builds, and SQLite files. Review files before publishing.
 
 ## Checks
 
 ```powershell
 npm.cmd run build
 npm.cmd test
+npm.cmd run test:coursework
+npm.cmd run test:desktop
 ```
 
-The build runs TypeScript checking and Vite production compilation. Tests cover SQLite persistence, time-zone normalization, import deduplication, completion preservation, invalid payload handling, external-link restrictions, and the original agent's sanitization/normalization checks. Live Moodle authentication and website compatibility require manual validation with your account.
+Unit tests cover storage, editing, date normalization and DST ambiguity, validation, retrieval and selection, AI failures, credential storage boundaries, recurring checks, reminder deduplication, and restart behavior. Coursework browser fixtures exercise actual DOM extraction without contacting Moodle.
 
-With the browser preview running and the agent's Chromium installed, run `npm.cmd run test:ui` in another terminal to check task creation, completion, browser persistence, routine creation, connection errors, and responsive layouts. This check uses an isolated browser session with sample data and does not contact Moodle. Its screenshot is saved to `.runtime/overview.png`.
+`test:desktop` uses a hidden native window in `.runtime/desktop-smoke`. It checks encrypted-key setup, IPC, material selection, chat and quiz UI with a **mocked provider transport**, and reminder execution. It contacts neither OpenAI nor Moodle. It requires Electron and Windows permissions for sandboxed processes.
 
-Run `npm.cmd run test:desktop` to check native window startup, the preload connection, and SQLite access. This requires the Electron binary and Windows permissions that allow Electron's sandboxed child processes to read it. The check hides its window, uses a separate `.runtime/desktop-smoke` workspace, and does not contact Moodle.
+With the preview running, `npm.cmd run test:ui` checks tasks, materials, local search, browser persistence, disconnected AI state, and responsive layouts. Its screenshot is `.runtime/overview.png`.
 
-## Private local data
+Optional live checks:
 
-Do not commit credentials, API keys, tokens, browser profiles, downloaded materials, or discovery artifacts. Git ignore rules exclude dependencies, local browser binaries, caches, runtime artifacts, build output, SQLite databases, and the agent's downloads and artifacts. Review files before publishing.
+```powershell
+npm.cmd run test:moodle:live
+npm.cmd run test:ai:live
+```
 
-## Next milestones
-
-1. Validate course and assignment sync against representative live courses.
-2. Extract assignment deadlines, quiz windows, and announcement evidence.
-3. Add supported AI authentication and a provider-independent tool interface.
-4. Add document retrieval, study chat, and practice quizzes.
-5. Extend saved instructions into tested browser routines and scheduled reminders.
-6. Package installers and validate each target operating system.
+The Moodle check uses your Windows credential, checks up to eight visible courses until it finds two with coursework, and prints counts only. The AI check requires `OPENAI_API_KEY` in that terminal, optionally `OPENAI_MODEL`; it makes one billed study-tip request without coursework. Live checks are separate from offline tests. Never paste credentials into chat or logs.
 
 ## License
 
-A project license has not yet been selected. Public source availability alone does not grant an open-source license.
+A project license has not been selected. Public source availability alone does not grant an open-source license.

@@ -1,9 +1,10 @@
 // Keep Electron's entry point synchronous. ESM evaluation must not hold up ready.
-const { app, dialog, protocol } = require("electron");
+const { app, dialog, protocol, BrowserWindow } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 
 app.setName("Study Assistant");
+if (process.platform === "win32") app.setAppUserModelId("Study Assistant");
 protocol.registerSchemesAsPrivileged([
   {
     scheme: "study",
@@ -11,6 +12,12 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 const smokeTest = process.argv.includes("--smoke-test");
+const ownsWorkspace = smokeTest || app.requestSingleInstanceLock();
+if (!ownsWorkspace) app.quit();
+app.on("second-instance", () => {
+  const existing = BrowserWindow.getAllWindows()[0];
+  if (existing) { if (existing.isMinimized()) existing.restore(); existing.show(); existing.focus(); }
+});
 if (smokeTest) {
   const data = path.resolve(__dirname, "../.runtime/desktop-smoke");
   fs.mkdirSync(data, { recursive: true });
@@ -19,7 +26,7 @@ if (smokeTest) {
 }
 
 console.log("[study] Starting Electron...");
-app
+if (ownsWorkspace) app
   .whenReady()
   .then(async () => {
     console.log("[study] Electron ready. Loading application...");

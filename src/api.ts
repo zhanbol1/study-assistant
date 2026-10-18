@@ -1,4 +1,6 @@
-import type { Snapshot, StudyApi } from "./types";
+import type { Snapshot, StudyApi, Settings } from "./types";
+
+export const defaultSettings: Settings = { model: "gpt-4.1-mini", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, remindersEnabled: false, reminderMinutes: 60, backgroundEnabled: false };
 
 const previewKey = "study-assistant-preview-v1";
 function seed(): Snapshot {
@@ -48,12 +50,16 @@ function seed(): Snapshot {
     courses: [],
     routines: [],
     sync: null,
+    settings: { ...defaultSettings }, documents: [], messages: [], notices: [],
   };
 }
 function read(): Snapshot {
   try {
     const value = localStorage.getItem(previewKey);
-    if (value) return JSON.parse(value);
+    if (value) {
+      const parsed = JSON.parse(value);
+      return { ...seed(), ...parsed, settings: { ...defaultSettings, ...parsed.settings } };
+    }
   } catch {
     /* reset malformed preview data */
   }
@@ -114,6 +120,23 @@ const previewApi: StudyApi = {
     update((state) => {
       state.routines = state.routines.filter((item) => item.id !== id);
     }),
+  setRoutineSchedule: async () => { throw new Error("Scheduled routines require the desktop app."); },
+  runRoutine: async () => { throw new Error("Run routines in the desktop app."); },
+  saveSettings: input => update(state => { state.settings = { ...state.settings, ...input }; }),
+  markNoticesRead: () => update(state => { state.notices.forEach(item => { item.read = true; }); }),
+  aiStatus: async () => ({ configured: false }),
+  connectAi: async () => { throw new Error("Connect OpenAI in the desktop app. API keys are never stored in the browser preview."); },
+  disconnectAi: async () => read(),
+  sendMessage: async () => { throw new Error("AI requests require the desktop app and an API connection."); },
+  clearChat: () => update(state => { state.messages = []; }),
+  addDocument: input => update(state => {
+    if (!input.title.trim() || !input.content.trim() || input.content.length > 120000) throw new Error("Enter a title and up to 120000 characters of text.");
+    state.documents.push({ id: crypto.randomUUID(), title: input.title.trim(), course: input.course.trim(), content: input.content, createdAt: new Date().toISOString() });
+  }),
+  deleteDocument: id => update(state => { state.documents = state.documents.filter(item => item.id !== id); }),
+  searchDocuments: async query => read().documents.filter(doc => `${doc.title} ${doc.course} ${doc.content || ""}`.toLowerCase().includes(query.toLowerCase())).map(doc => ({ id: doc.id, title: doc.title, excerpt: (doc.content || "").slice(0, 400) })),
+  importDocument: async () => { throw new Error("File import requires the desktop app. You can paste notes in this preview."); },
+  onSnapshot: () => () => {},
   syncCourses: unavailable,
   syncAssignments: unavailable,
   openSource: async (url) => {

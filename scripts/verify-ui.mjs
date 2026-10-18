@@ -88,6 +88,23 @@ try {
   await page
     .getByText("No AI provider is connected.", { exact: false })
     .waitFor();
+  await page.getByRole("button", { name: "Paste notes", exact: true }).click();
+  await page.getByLabel("Material title", { exact: true }).fill("Calculus lecture");
+  await page.getByLabel("Study notes", { exact: true }).fill("The chain rule differentiates composite functions.");
+  await page.getByRole("button", { name: "Save material", exact: true }).click();
+  await page.getByRole("checkbox", { name: /Calculus lecture/ }).check();
+  await page.getByLabel("Search material text", { exact: true }).fill("composite");
+  await page.getByText("The chain rule differentiates composite functions.", { exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Send", exact: true }).isDisabled(), true);
+  await page.reload();
+  await page.getByRole("button", { name: "Assistant", exact: true }).click();
+  await page.getByRole("checkbox", { name: /Calculus lecture/ }).waitFor();
+  for (const width of [920, 620, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `Assistant overflow at ${width}px`);
+  }
+  await page.setViewportSize({ width: 1360, height: 1000 });
+  await page.screenshot({ path: path.join(root, ".runtime/assistant.png"), fullPage: true });
   await page.getByRole("button", { name: "Overview", exact: true }).click();
   await fs.mkdir(path.join(root, ".runtime"), { recursive: true });
   await page.screenshot({
@@ -106,7 +123,7 @@ try {
   }
   assert.deepEqual(errors, [], "No uncaught renderer errors");
   console.log(
-    "UI checks passed: add/detail/edit/complete task, edited deadline and notes persistence, routine creation, sync error, AI status, and responsive layouts.",
+    "UI checks passed: task editing and persistence, routine creation, sync errors, disconnected AI state, material creation/search/persistence, and responsive overview and assistant layouts.",
   );
 } finally {
   await browser.close();

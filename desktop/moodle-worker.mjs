@@ -16,13 +16,16 @@ process.parentPort.once("message", async ({ data }) => {
       const { listCourseFiles, downloadCourseFile } = await import("../lms-agent/src/browser/files.js");
       result = data.operation === "files" ? await listCourseFiles(data.courseId.courseId, data.courseId.activityId)
         : await downloadCourseFile(data.courseId.courseId, data.courseId.activityId, data.courseId.fileId);
+    } else if (data.operation === "read-slides") {
+      const { readCourseSlides } = await import("../lms-agent/src/browser/presentation.js");
+      result = await readCourseSlides(data.courseId.courseId, data.courseId.activityId, data.courseId.fileId);
     } else throw new Error("Unsupported Moodle operation.");
     process.parentPort.postMessage({ ok: true, result });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Moodle operation failed.";
     // Playwright exception details can include DOM excerpts and call logs. Return a category only.
-    const safe = message.includes("No LMS credentials")
+    const safe = error?.name === "PresentationReadError" ? message : message.includes("No LMS credentials")
       ? "No credentials found. Run npm run credentials:set in your terminal."
       : /Executable doesn't exist|Cannot find package|Cannot find module/.test(
             message,

@@ -19,6 +19,7 @@
     "test:desktop": "node scripts/verify-desktop.mjs",
     "test:coursework": "node scripts/verify-coursework.mjs",
     "test:moodle:live": "node scripts/verify-moodle.mjs",
+    "test:slides:live": "node scripts/verify-slides-live.mjs",
     "test:ai:live": "node scripts/verify-ai-live.mjs",
     "lms:install": "npm --prefix lms-agent install",
     "lms:browser": "node scripts/install-browser.mjs",
@@ -29,7 +30,9 @@
     "jose": "^6.2.12",
     "lucide-react": "^0.468.0",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "saxes": "^6.0.0",
+    "yauzl": "^3.4.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

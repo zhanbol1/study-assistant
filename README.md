@@ -46,7 +46,17 @@ Ask **"Download the files for my homework"** or **"Find and download the lecture
 
 Open **Downloads** in the sidebar for filenames, course, size, source and download time. **Show in folder** reveals the local file; nothing is executed automatically. Desktop files live under `moodle/downloads` in the app-data folder. Downloads use unique names, are limited to 100 MB each and ten files per message, and are revalidated against the course before saving. External download redirects are rejected. Missing or restricted files are reported as failures. Moving/deleting a file outside the app is detected when revealing it.
 
-Downloading does not mark an assignment complete and does not extract PDF, Word or ZIP contents into AI context. Explicitly selected text/Markdown notes can still be used through the chat's Materials menu. Downloaded filenames and metadata are available to AI; binary file contents and local filesystem paths are not sent by these tools.
+Downloading alone does not mark an assignment complete or read its contents. The separate slide-reading tool can extract PPTX text and speaker notes; PDF, Word, legacy PPT and folder ZIP extraction are not supported. Explicitly selected text/Markdown notes can still be used through the chat's Materials menu. Downloaded filenames and metadata are available to AI. When you ask the assistant to read lecture slides, requested PPTX text and speaker notes are also sent as cited study material; binary file contents and local filesystem paths are not sent.
+
+## Reading PowerPoint slides in Moodle folders
+
+Ask **"Read the PowerPoint slides in my lecture folder and summarize them"** or **"Find the homework mentioned in the lecture slides"**. The assistant lists course files, opens the relevant Moodle folder, then reads individual `.pptx` files using `read_slides`. Nested folder paths are included when Moodle exposes their file links. Folder ZIPs remain downloadable but are not used as a substitute for reading individual decks.
+
+The reader extracts text, table-cell text and speaker notes in presentation order and returns slide-number references. It does not require Microsoft PowerPoint. Local reading copies appear in Downloads. Slide text is treated as untrusted course material, never as instructions to change Memory or call unrelated tools.
+
+Images, diagrams, embedded charts, equations and animations are not visually interpreted. Image-only slides are identified by missing extracted text and image counts. The assistant must disclose unread ranges and any text truncation. Reading is paginated (up to 20 slides and roughly 24,000 text characters per tool response), with a next-slide pointer. A message can read up to five presentations and return up to 150,000 characters. Each deck is limited to 500 slides and one million extracted characters, with separate compressed-file and XML expansion limits. Malformed, encrypted and unsupported files produce a clear error rather than an invented summary.
+
+Optional account verification: `npm.cmd run test:slides:live` discovers folders, downloads one PPTX into `.runtime/slides-live`, and prints slide/text counts only. It sends no content to an AI provider.
 
 ## Connect Moodle
 
@@ -74,7 +84,7 @@ Remove stored credentials with `npm.cmd run credentials:delete`. See the [LMS ag
 
 The **Materials** menu lets you import UTF-8 `.txt` or `.md` notes and select which documents to include in your next message. Existing notes remain selectable. Import is limited to 500 KB per file, 120,000 characters per document and 100 documents. Retrieval selects up to eight relevant text passages. PDF/Word text extraction is not implemented. Moodle resource downloads are available through chat and the Downloads collection.
 
-Each request sends your saved Memory, prompt, up to twelve recent chat messages and excerpts from selected notes to your active AI provider. When your question needs Moodle, requested course names, activity descriptions, deadlines and source links are also shared. Earlier answers may retain information from previous selections. **New chat** clears local conversation history; it does not delete materials or credentials. Chat is capped at 100 saved messages. Practice quizzes can be answered and scored inline; choices/scores reset on reload.
+Each request sends your saved Memory, prompt, up to twelve recent chat messages and excerpts from selected notes to your active AI provider. When your question needs Moodle, requested course names, activity descriptions, deadlines, source links and extracted PPTX slide text/notes are also shared. Earlier answers may retain information from previous selections. **New chat** clears local conversation history; it does not delete materials or credentials. Chat is capped at 100 saved messages. Practice quizzes can be answered and scored inline; choices/scores reset on reload.
 
 Both connections use the public [Responses API](https://developers.openai.com/api/docs/guides/migrate-to-responses), structured answers and `store: false`. Subscription requests use streaming and separate Moodle/workspace tool namespaces. Credentials are checked again between provider rounds so a long lookup can renew an expiring session. The tool loop replays response items, including encrypted reasoning, together with function results. An answer is saved only after a successful completed response and citation validation. Disabling response storage is not a blanket zero-retention guarantee. AI can still make mistakes; references show the supplied evidence, not independent verification of every claim.
 
@@ -116,7 +126,7 @@ desktop/memory.mjs          User-editable memory.md and revision checks
 desktop/response-stream.mjs Completed SSE reconstruction
 desktop/chatgpt-auth.mjs    Verified ChatGPT authorization and token lifecycle
 desktop/store.mjs           Compatible SQLite records and imports
-lms-agent/src/browser/      Moodle authentication and coursework readers
+lms-agent/src/browser/      Moodle readers, folder files and bounded PPTX extraction
 test/ and scripts/         Unit, browser, native and live checks
 ```
 

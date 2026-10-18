@@ -88,7 +88,7 @@ async function readMoodle(operation, courseId, background = false, signal) {
       child.on("message", (message) => {
         if (message?.ok === true) {
           try {
-            if (operation === "download") managedDownload(message.result?.file?.path, path.join(app.getPath("userData"), "moodle/downloads"));
+            if (["download", "read-slides"].includes(operation)) managedDownload(message.result?.file?.path, path.join(app.getPath("userData"), "moodle/downloads"));
             finish(null, message.result);
           } catch { finish(new Error("The downloaded file could not be verified.")); }
         }

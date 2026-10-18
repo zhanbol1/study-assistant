@@ -25,20 +25,25 @@ export function normalizeFileLinks(links, activity) {
     if (url.origin !== new URL(config.baseUrl).origin || url.username || url.password || !/^\/pluginfile\.php\/\d+\//.test(url.pathname)) continue;
     url.hash = ''; url.search = '?forcedownload=1';
     const id = `attachment:${createHash('sha256').update(url.href).digest('hex').slice(0, 24)}`;
-    result.set(id, { id, activityId: activity.id, title: cleanText(link.title).slice(0, 200) || 'Attached file', type: 'attachment', sourceUrl: activity.url, url: url.href });
+    let filename;
+    try { filename = decodeURIComponent(url.pathname.split('/').pop()); } catch { filename = ''; }
+    result.set(id, { id, activityId: activity.id, title: cleanText(link.title).slice(0, 200) || filename || 'Attached file', filename, type: activity.type === 'folder' ? 'folder_file' : 'attachment', sourceUrl: activity.url, url: url.href });
   }
   return [...result.values()];
 }
 export async function filesForActivity(page, activity) {
-  if (['resource', 'folder'].includes(activity.type)) return [resourceFile(activity)];
-  if (!['assign', 'quiz'].includes(activity.type)) throw new Error('This activity does not expose downloadable attachments.');
+  if (activity.type === 'resource') return [resourceFile(activity)];
+  if (!['assign', 'quiz', 'folder'].includes(activity.type)) throw new Error('This activity does not expose downloadable attachments.');
   await page.goto(activity.url, { waitUntil: 'domcontentloaded' });
   const url = new URL(page.url());
   if (url.origin !== new URL(config.baseUrl).origin || url.pathname !== `/mod/${activity.type}/view.php` || url.searchParams.get('id') !== activity.id) throw new Error('The requested activity did not open.');
-  const links = await page.locator('#intro a[href*="/pluginfile.php/"], .activity-description a[href*="/pluginfile.php/"]').evaluateAll(links => links.map(link => ({ href: link.href, title: link.textContent })));
+  await page.locator('#region-main').waitFor();
+  if (activity.type === 'folder') await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+  const selector = activity.type === 'folder' ? '#region-main a[href*="/pluginfile.php/"]' : '#intro a[href*="/pluginfile.php/"], .activity-description a[href*="/pluginfile.php/"]';
+  const links = await page.locator(selector).evaluateAll(links => links.map(link => ({ href: link.href, title: link.textContent })));
   const files = normalizeFileLinks(links, activity);
   if (files.length > 200) throw new Error('Too many attachments in this activity.');
-  return files;
+  return activity.type === 'folder' ? [resourceFile(activity), ...files] : files;
 }
 export async function listCourseFiles(courseId, activityId = null) {
   numeric(courseId); if (activityId !== null) numeric(activityId);
@@ -67,7 +72,8 @@ export async function downloadCourseFile(courseId, activityId, fileId) {
   return withAuthenticatedPage(courseUrl(courseId), async (page, context) => {
     const activity = (await activitiesOn(page, courseId)).find(item => item.id === String(activityId));
     if (!activity) throw new Error('Activity was not found inside the selected course.');
-    const file = (await filesForActivity(page, activity)).find(file => file.id === fileId);
+    const available = fileId === `activity:${activity.id}` && ['resource', 'folder'].includes(activity.type) ? [resourceFile(activity)] : await filesForActivity(page, activity);
+    const file = available.find(file => file.id === fileId);
     if (!file) throw new Error('File is no longer available in this activity. List files again.');
     let requestUrl = file.type === 'folder' ? new URL(`/mod/folder/download_folder.php?id=${activity.id}`, config.baseUrl).href : file.url || activity.url;
     let response;

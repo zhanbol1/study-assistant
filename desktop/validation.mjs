@@ -74,7 +74,7 @@ function routineAction(value) {
 }
 
 export const defaultSettings = () => ({
-  model: "gpt-4.1-mini", aiMode: "api-key", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  model: "gpt-4.1-mini", claudeModel: "claude-opus-5-5", aiMode: "api-key", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   remindersEnabled: false, reminderMinutes: 60, backgroundEnabled: false,
 });
 
@@ -82,7 +82,7 @@ export function settingsInput(input, previous = defaultSettings()) {
   if (!input || typeof input !== "object") throw new Error("Invalid settings.");
   const result = { ...previous };
   if ("aiMode" in input) {
-    if (!["api-key", "chatgpt"].includes(input.aiMode)) throw new Error("Choose API key or ChatGPT plan.");
+    if (!["api-key", "chatgpt", "claude"].includes(input.aiMode)) throw new Error("Choose API key, ChatGPT plan or Claude.");
     result.aiMode = input.aiMode;
   }
   for (const key of ["remindersEnabled", "backgroundEnabled"]) {
@@ -95,9 +95,10 @@ export function settingsInput(input, previous = defaultSettings()) {
     if (!Number.isInteger(input.reminderMinutes) || input.reminderMinutes < 1 || input.reminderMinutes > 10080) throw new Error("Reminder lead time must be 1–10080 minutes.");
     result.reminderMinutes = input.reminderMinutes;
   }
-  if ("model" in input) {
-    result.model = text(input.model, "Model", 100);
-    if (!/^[a-zA-Z0-9._:-]+$/.test(result.model)) throw new Error("Invalid model ID.");
+  for (const key of ["model", "claudeModel"]) {
+    if (!(key in input)) continue;
+    result[key] = text(input[key], "Model", 100);
+    if (!/^[a-zA-Z0-9._:-]+$/.test(result[key])) throw new Error("Invalid model ID.");
   }
   if ("timeZone" in input) {
     result.timeZone = text(input.timeZone, "Time zone", 100);

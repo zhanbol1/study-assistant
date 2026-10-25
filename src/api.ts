@@ -1,6 +1,6 @@
 import type { Snapshot, StudyApi, Settings } from "./types";
 
-export const defaultSettings: Settings = { model: "gpt-4.1-mini", aiMode: "api-key", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, remindersEnabled: false, reminderMinutes: 60, backgroundEnabled: false };
+export const defaultSettings: Settings = { model: "gpt-4.1-mini", claudeModel: "claude-opus-5-5", aiMode: "api-key", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, remindersEnabled: false, reminderMinutes: 60, backgroundEnabled: false };
 
 const previewKey = "study-assistant-preview-v1";
 function seed(): Snapshot {
@@ -55,6 +55,8 @@ const previewApi: StudyApi = {
   aiStatus: async () => ({ configured: false }),
   connectAi: async () => { throw new Error("Connect OpenAI in the desktop app. API keys are never stored in the browser preview."); },
   disconnectAi: async () => read(),
+  connectClaude: async () => { throw new Error("Connect Claude in the desktop app. API keys are never stored in the browser preview."); },
+  disconnectClaude: async () => read(),
   signInChatGpt: async () => { throw new Error("Continue with ChatGPT in the desktop app."); },
   cancelChatGptSignIn: async () => read(),
   signOutChatGpt: async () => ({ snapshot: read() }),

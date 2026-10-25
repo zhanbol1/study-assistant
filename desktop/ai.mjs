@@ -4,23 +4,25 @@ import { readResponseStream } from "./response-stream.mjs";
 import { subscriptionError } from "./chatgpt-auth.mjs";
 import { createMoodleTools, moodleFunctions } from "./moodle-tools.mjs";
 import { createWorkspaceTools, workspaceFunctions } from "./workspace-tools.mjs";
+import { runClaude } from "./claude.mjs";
 
-export function createKeyVault(filename, encryption, env = process.env) {
+export function createKeyVault(filename, encryption, env = process.env, { variable = "OPENAI_API_KEY", provider = "OpenAI" } = {}) {
   const supported = () => encryption.isEncryptionAvailable() && encryption.getSelectedStorageBackend?.() !== "basic_text";
   return {
-    configured() { return Boolean(env.OPENAI_API_KEY || (supported() && fs.existsSync(filename))); },
+    configured() { return Boolean(env[variable] || (supported() && fs.existsSync(filename))); },
+    fromEnvironment() { return Boolean(env[variable]); },
     save(value) {
       const key = text(value, "API key", 500);
       if (/\s/.test(key)) throw new Error("API key cannot contain whitespace.");
-      if (!supported()) throw new Error("Secure credential storage is unavailable on this device. Set OPENAI_API_KEY in your terminal instead.");
+      if (!supported()) throw new Error(`Secure credential storage is unavailable on this device. Set ${variable} in your terminal instead.`);
       fs.writeFileSync(filename, encryption.encryptString(key), { mode: 0o600 });
     },
     remove() { if (fs.existsSync(filename)) fs.unlinkSync(filename); },
     read() {
-      if (env.OPENAI_API_KEY) return env.OPENAI_API_KEY;
+      if (env[variable]) return env[variable];
       try { if (supported() && fs.existsSync(filename)) return encryption.decryptString(fs.readFileSync(filename)); }
       catch { throw new Error("The stored API key could not be unlocked. Reconnect in Settings."); }
-      throw new Error("Connect OpenAI in Settings before sending a message.");
+      throw new Error(`Connect ${provider} in Settings before sending a message.`);
     },
   };
 }
@@ -125,7 +127,7 @@ export function validateAnswer(value, sources, mode) {
   return { content: answer, sources: sources.filter(source => value.sourceIds.includes(source.reference)).map(({ content, ...metadata }) => ({ ...metadata, excerpt: content.slice(0, 700) })), questions };
 }
 
-export function createAssistant({ store, vault, credentials, generate, request = requestOpenAI, readMoodle, progress = () => {}, onChange = () => {} }) {
+export function createAssistant({ store, vault, credentials, generate, request = requestOpenAI, claude = runClaude, readMoodle, progress = () => {}, onChange = () => {} }) {
   let pending = false;
   let requestAbort;
   return {
@@ -158,13 +160,15 @@ export function createAssistant({ store, vault, credentials, generate, request =
             if (moodle) return moodle(call);
             return { error: "Unknown tool or Moodle is unavailable." };
           };
+          const tools = [...(moodle ? moodleFunctions : []), ...workspaceFunctions];
+          if (auth.provider === "claude") answer = await claude({ ...options, ...auth, tools, execute, progress });
           let count = 0;
-          for (let round = 0; round < 26; round++) {
+          for (let round = 0; !answer && round < 26; round++) {
             signal.throwIfAborted();
             progress(round ? "Preparing your answer" : "Thinking");
             const currentAuth = round && credentials ? await credentials() : auth;
             signal.throwIfAborted();
-            const response = await request({ ...options, ...currentAuth, tools: [...(moodle ? moodleFunctions : []), ...workspaceFunctions] });
+            const response = await request({ ...options, ...currentAuth, tools });
             signal.throwIfAborted();
             const calls = (response.output || []).filter(item => item.type === "function_call");
             if (!calls.length) { answer = parseAnswer(response); break; }

@@ -36,7 +36,7 @@ export function AssistantPanel({ state, onUpdate }: { state: Snapshot; onUpdate:
       if (ok) setPrompt("");
     } finally { setBusy(false); setProgress(""); setPendingPrompt(""); textarea.current?.focus(); }
   }
-  const connection = status.configured ? status.mode === "chatgpt" ? `ChatGPT plan · ${status.chatgpt?.model || "Choose a model"}` : `OpenAI API · ${state.settings.model}` : "Connect ChatGPT or API key";
+  const connection = status.configured ? status.mode === "chatgpt" ? `ChatGPT plan · ${status.chatgpt?.model || "Choose a model"}` : status.mode === "claude" ? `Claude API · ${state.settings.claudeModel}` : `OpenAI API · ${state.settings.model}` : "Connect ChatGPT, OpenAI or Claude";
   return <div className="chat-app">
     <header className="app-header"><a className="brand" href="#" aria-label="Study Assistant"><span className="brand-mark"><BookOpen size={19} /></span>Study<span>Assistant</span></a>
       <button className="button secondary new-chat" disabled={busy || !state.messages.length} onClick={() => void act(api.clearChat)}><Plus size={16} />New chat</button></header>

@@ -28,6 +28,7 @@
     "credentials:delete": "npm --prefix lms-agent run credentials:delete"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
     "jose": "^6.2.12",
     "lucide-react": "^0.468.0",
     "react": "^19.3.1",

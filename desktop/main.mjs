@@ -31,6 +31,7 @@ let window;
 let syncing = false;
 let assistant;
 let vault;
+let claudeVault;
 let chatgpt;
 let chatgptError = "";
 const moodleClient = createMoodleClient({
@@ -39,6 +40,7 @@ const moodleClient = createMoodleClient({
     env: {
       ...process.env,
       OPENAI_API_KEY: "",
+      ANTHROPIC_API_KEY: "",
       LMS_HEADLESS: background ? "true" : "false",
       LMS_REUSE_SESSION: "true",
       PLAYWRIGHT_BROWSERS_PATH: path.join(root, "lms-agent/.playwright-browsers"),
@@ -141,11 +143,16 @@ export async function start() {
   fs.mkdirSync(app.getPath("userData"), { recursive: true });
   store = createStore(path.join(app.getPath("userData"), "study.sqlite"));
   vault = createKeyVault(path.join(app.getPath("userData"), "openai-key.bin"), safeStorage);
+  claudeVault = createKeyVault(path.join(app.getPath("userData"), "anthropic-key.bin"), safeStorage, process.env, { variable: "ANTHROPIC_API_KEY", provider: "Claude" });
   chatgpt = createChatGptAuth({ filename: path.join(app.getPath("userData"), "chatgpt-session.bin"), encryption: safeStorage, openBrowser: url => shell.openExternal(url), onChange: broadcast });
   assistant = createAssistant({ store, vault, readMoodle, onChange: broadcast, progress: value => {
     if (window && !window.isDestroyed()) window.webContents.send("study:ai-progress", value);
-  }, credentials: () => store.snapshot().settings.aiMode === "chatgpt"
-    ? chatgpt.credentials() : { key: vault.read(), model: store.snapshot().settings.model } });
+  }, credentials: () => {
+    const { aiMode, model, claudeModel } = store.snapshot().settings;
+    if (aiMode === "chatgpt") return chatgpt.credentials();
+    if (aiMode === "claude") return { provider: "claude", key: claudeVault.read(), model: claudeModel };
+    return { key: vault.read(), model };
+  } });
   session.defaultSession.setPermissionRequestHandler(
     (_contents, _permission, callback) => callback(false),
   );
@@ -172,7 +179,8 @@ export async function start() {
     catch { throw new Error("File was moved, removed, or is outside the downloads folder. Ask the assistant to download it again."); }
   });
   handle("study:settings", input => {
-    if ((input?.aiMode && input.aiMode !== store.snapshot().settings.aiMode) || (input?.model && input.model !== store.snapshot().settings.model)) assistant.cancel();
+    const current = store.snapshot().settings;
+    if (["aiMode", "model", "claudeModel"].some(key => input?.[key] && input[key] !== current[key])) assistant.cancel();
     const result = store.saveSettings(input);
     return result;
   });
@@ -180,7 +188,21 @@ export async function start() {
     const mode = store.snapshot().settings.aiMode;
     let plan;
     try { plan = chatgpt.status(); } catch (error) { plan = { signedIn: false, planEnabled: false, model: "", models: [], error: error.message }; }
-    return { configured: mode === "chatgpt" ? plan.planEnabled : vault.configured(), apiKeyConfigured: vault.configured(), mode, chatgpt: { ...plan, error: chatgptError || plan.error }, fromEnvironment: Boolean(process.env.OPENAI_API_KEY) };
+    return { configured: mode === "chatgpt" ? plan.planEnabled : mode === "claude" ? claudeVault.configured() : vault.configured(), apiKeyConfigured: vault.configured(), mode, chatgpt: { ...plan, error: chatgptError || plan.error }, fromEnvironment: vault.fromEnvironment(),
+      claude: { configured: claudeVault.configured(), fromEnvironment: claudeVault.fromEnvironment() } };
+  });
+  handle("study:claude-connect", input => {
+    const checked = settingsInput({ claudeModel: input?.model, aiMode: "claude" }, store.snapshot().settings);
+    if (input?.key) claudeVault.save(input.key);
+    else if (!claudeVault.configured()) throw new Error("Enter your Anthropic API key.");
+    assistant.cancel();
+    return store.saveSettings(checked);
+  });
+  handle("study:claude-disconnect", () => {
+    assistant.cancel();
+    claudeVault.remove();
+    if (store.snapshot().settings.aiMode === "claude" && !claudeVault.configured()) store.saveSettings({ aiMode: "api-key" });
+    return store.snapshot();
   });
   handle("study:ai-connect", input => {
     const checked = settingsInput({ model: input?.model, aiMode: "api-key" }, store.snapshot().settings);

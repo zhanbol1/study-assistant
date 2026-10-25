@@ -39,7 +39,8 @@ export interface Routine {
 export type Cadence = "manual" | "hourly" | "daily" | "weekly";
 export interface Settings {
   model: string;
-  aiMode: "api-key" | "chatgpt";
+  claudeModel: string;
+  aiMode: "api-key" | "chatgpt" | "claude";
   timeZone: string;
   remindersEnabled: boolean;
   reminderMinutes: number;
@@ -53,7 +54,8 @@ export interface PageSource { reference: string; title: string; sourceUrl?: stri
 export interface SavedPage { id: string; title: string; content: string; revision: string; sources: PageSource[]; updatedAt: string; createdAt: string }
 export interface DownloadedFile { id: string; filename: string; bytes: number; course: string; sourceUrl: string; createdAt: string }
 export interface AiStatus {
-  configured: boolean; fromEnvironment?: boolean; apiKeyConfigured?: boolean; mode?: "api-key" | "chatgpt";
+  configured: boolean; fromEnvironment?: boolean; apiKeyConfigured?: boolean; mode?: Settings["aiMode"];
+  claude?: { configured: boolean; fromEnvironment: boolean };
   chatgpt?: { signedIn: boolean; planEnabled: boolean; account?: string; model: string; models: { id: string; name: string }[]; pending?: boolean; error?: string; welcomeRequired?: boolean };
 }
 export interface Snapshot {
@@ -85,6 +87,8 @@ export interface StudyApi {
   aiStatus(): Promise<AiStatus>;
   connectAi(input: { key: string; model: string }): Promise<Snapshot>;
   disconnectAi(): Promise<Snapshot>;
+  connectClaude(input: { key: string; model: string }): Promise<Snapshot>;
+  disconnectClaude(): Promise<Snapshot>;
   signInChatGpt(options?: { newAccount?: boolean; consent?: boolean }): Promise<Snapshot>;
   cancelChatGptSignIn(): Promise<Snapshot>;
   signOutChatGpt(): Promise<{ snapshot: Snapshot; warning?: string }>;

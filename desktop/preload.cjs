@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld(
     aiStatus: () => ipcRenderer.invoke("study:ai-status"),
     connectAi: (input) => ipcRenderer.invoke("study:ai-connect", input),
     disconnectAi: () => ipcRenderer.invoke("study:ai-disconnect"),
+    connectClaude: (input) => ipcRenderer.invoke("study:claude-connect", input),
+    disconnectClaude: () => ipcRenderer.invoke("study:claude-disconnect"),
     signInChatGpt: (options) => ipcRenderer.invoke("study:chatgpt-sign-in", options),
     cancelChatGptSignIn: () => ipcRenderer.invoke("study:chatgpt-cancel"),
     signOutChatGpt: () => ipcRenderer.invoke("study:chatgpt-sign-out"),

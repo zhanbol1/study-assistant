@@ -58,12 +58,12 @@ export function ConnectionSettings({ state, onUpdate }: { state: Snapshot; onUpd
         <div className="compose-actions"><button className="button secondary" disabled={busy} onClick={() => void act(api.refreshChatGptModels, "Available ChatGPT models refreshed.")}>Refresh models</button>
           <button className="button primary" disabled={busy || state.settings.aiMode === "chatgpt"} onClick={() => void act(() => api.saveSettings({ aiMode: "chatgpt" }), "Using your ChatGPT plan for AI requests.")}>Use ChatGPT plan</button></div>
       </>}
-      <p className="small-note">{state.settings.aiMode === "chatgpt" ? "Using ChatGPT plan. Requests will not switch to API billing if your plan reaches a limit." : "AI requests currently use the API-key connection when configured."}</p>
+      <p className="small-note">{state.settings.aiMode === "chatgpt" ? "Using ChatGPT plan. Requests will not switch to API billing if your plan reaches a limit." : state.settings.aiMode === "claude" ? "AI requests currently use Claude." : "AI requests currently use the API-key connection when configured."}</p>
       <button className="text-button" onClick={() => void api.openChatGptUsage().catch(cause => setError(cause.message))}>Manage ChatGPT usage</button>
     </section>
     <section className="panel feature-settings">
       <h2>OpenAI connection</h2>
-      <p>{status.apiKeyConfigured || (status.mode !== "chatgpt" && status.configured) ? "An API key is configured. Access is checked when you send a request." : "No API key is configured."} {status.fromEnvironment && "Using OPENAI_API_KEY from your environment."}</p>
+      <p>{status.apiKeyConfigured ?"An API key is configured. Access is checked when you send a request." : "No API key is configured."} {status.fromEnvironment && "Using OPENAI_API_KEY from your environment."}</p>
       <p>Connect your OpenAI API account. Selected materials and chat history are sent only when you send a message or request a quiz. API billing is separate from a ChatGPT subscription.</p>
       <form onSubmit={event => {
         event.preventDefault(); const form = event.currentTarget; const data = new FormData(form);
@@ -73,6 +73,21 @@ export function ConnectionSettings({ state, onUpdate }: { state: Snapshot; onUpd
         <label className="field">Model ID<input key={state.settings.model} name="model" defaultValue={state.settings.model} required maxLength={100} /></label>
         <p className="small-note">Saved API keys are encrypted using your operating system’s credential protection. The browser preview cannot store API keys.</p>
         <div className="compose-actions"><button className="button secondary" type="button" disabled={busy || !status.apiKeyConfigured || status.fromEnvironment} onClick={() => void act(api.disconnectAi, "Saved API key removed.")}>Disconnect</button><button className="button primary" disabled={busy || isPreview}>Save connection</button></div>
+      </form>
+      {state.settings.aiMode !== "api-key" && status.apiKeyConfigured && <button className="text-button" disabled={busy} onClick={() => void act(() => api.saveSettings({ aiMode: "api-key" }), "Using the OpenAI API key for AI requests.")}>Use OpenAI API key</button>}
+    </section>
+    <section className="panel feature-settings">
+      <h2>Claude (Anthropic API)</h2>
+      <p>{status.claude?.configured ? "An Anthropic API key is configured. Access is checked when you send a request." : "No Anthropic API key is configured."} {status.claude?.fromEnvironment && "Using ANTHROPIC_API_KEY from your environment."}</p>
+      <p>Connect an Anthropic API key from console.anthropic.com. API usage is billed separately from a Claude Pro or Max subscription, which cannot be used by this app.</p>
+      <form onSubmit={event => {
+        event.preventDefault(); const form = event.currentTarget; const data = new FormData(form);
+        void act(() => api.connectClaude({ key: String(data.get("key") || "").trim(), model: String(data.get("model") || "").trim() }), "Using Claude for AI requests. Send a message in chat to verify access.").then(ok => { if (ok) { const key = form.elements.namedItem("key") as HTMLInputElement; key.value = ""; } });
+      }}>
+        <label className="field">Anthropic API key<input name="key" type="password" autoComplete="off" maxLength={500} required={!status.claude?.configured} placeholder={status.claude?.configured ? "Leave blank to keep the current key" : "Enter your Anthropic API key"} disabled={isPreview} /></label>
+        <label className="field">Claude model ID<input key={state.settings.claudeModel} name="model" defaultValue={state.settings.claudeModel} required maxLength={100} /></label>
+        <p className="small-note">For example claude-opus-5-5 (default), claude-sonnet-5-5 or claude-haiku-5-5 (cheaper). The key is encrypted with your operating system’s credential protection.</p>
+        <div className="compose-actions"><button className="button secondary" type="button" disabled={busy || !status.claude?.configured || status.claude?.fromEnvironment} onClick={() => void act(api.disconnectClaude, "Saved Anthropic API key removed.")}>Disconnect</button><button className="button primary" disabled={busy || isPreview}>{state.settings.aiMode === "claude" ? "Save Claude connection" : "Use Claude"}</button></div>
       </form>
     </section>
     <section className="panel feature-settings">

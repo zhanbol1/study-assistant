@@ -17,7 +17,7 @@ This is a working development app for the UCA Moodle site, with no packaged inst
 
 | Capability | Current behavior |
 | --- | --- |
-| AI connection | ChatGPT sign-in for an eligible existing plan, or an OpenAI API key; connection controls are below chat. |
+| AI connection | ChatGPT sign-in for an eligible existing plan, an OpenAI API key, or an Anthropic API key for Claude; connection controls are below chat. |
 | Homework and quizzes | Reads visible course activities, explicit deadlines and available submission/attempt evidence. |
 | Lecture folders | Lists individual files inside Moodle folders and reads PPTX text and speaker notes with slide citations. |
 | Memory | An editable `memory.md` file supplies course-specific instructions on every request. |
@@ -57,6 +57,8 @@ Expand **Connections** beneath the message box. Use **Continue with ChatGPT** to
 ChatGPT authorization uses the [official local sign-in flow](https://developers.openai.com/siwc/token-sharing-open-source/sign-in), with state, PKCE, nonce and signed identity validation. Select a model from your account's catalog after authorization. You can also run `npm.cmd run connect:chatgpt` to start sign-in. This authorizes an existing plan; it does not purchase a subscription. Sign-out removes local tokens and attempts remote revocation. Tokens refresh when needed and remain encrypted using Electron's OS-backed `safeStorage`.
 
 ChatGPT mode uses your plan allowance and never silently switches to API billing. API-key mode has separate API billing; its default model is `gpt-4.1-mini`. Keys are stored using OS-backed encryption; plaintext fallback is refused. `OPENAI_API_KEY` takes precedence only in API-key mode. Changing connection mode, disconnecting or signing out cancels the current request. **Manage ChatGPT usage** opens account usage settings.
+
+Claude mode uses an Anthropic API key from [console.anthropic.com](https://console.anthropic.com) under **Claude (Anthropic API)**; its default model is `claude-opus-5-5` (`claude-sonnet-5-5` and `claude-haiku-5-5` are cheaper). API usage is billed separately; a Claude Pro or Max subscription cannot be used by third-party apps. `ANTHROPIC_API_KEY` takes precedence over the saved key in Claude mode. On supported models, a request declined by Claude's safety classifiers is automatically retried on a fallback model.
 
 ## Memory and sidebar pages
 
